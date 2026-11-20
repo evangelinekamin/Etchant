@@ -209,7 +209,12 @@ def compare(design_a: str, design_b: str) -> None:
 @click.option("--output-voltage", "-vout", type=float, required=True, help="Output voltage (V)")
 @click.option("--current", "-i", type=float, required=True, help="Output current (A)")
 @click.option(
-    "--priority", "-p", type=click.Choice(["balanced", "efficiency", "noise", "cost", "size"]),
+    "--priority",
+    "-p",
+    type=click.Choice([
+        "balanced", "efficiency", "noise", "cost", "size", "usb_power",
+        "protection",
+    ]),
     default="balanced", help="Design priority",
 )
 def recommend(

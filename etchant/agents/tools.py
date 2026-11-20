@@ -136,7 +136,10 @@ TOOLS: tuple[ToolDefinition, ...] = (
             },
             "priority": {
                 "type": "string",
-                "description": "Design priority: balanced, efficiency, noise, cost, or size",
+                "description": (
+                    "Design priority: balanced, efficiency, noise, cost, size, "
+                    "usb_power, or protection"
+                ),
             },
         },
         required_params=(),
@@ -158,6 +161,109 @@ TOOLS: tuple[ToolDefinition, ...] = (
             "output_dir": {
                 "type": "string",
                 "description": "Output directory path",
+            },
+        },
+        required_params=("topology", "input_voltage", "output_voltage", "output_current"),
+    ),
+    ToolDefinition(
+        name="validate_jlcpcb_assembly",
+        description=(
+            "Validate whether a generated design is ready for JLCPCB assembly. "
+            "Checks LCSC part matches, Basic vs Extended parts, stock, package/footprint "
+            "mismatches, and through-hole/manual-assembly items."
+        ),
+        parameters={
+            "topology": {"type": "string", "description": "Circuit topology"},
+            "input_voltage": {"type": "number", "description": "Input voltage in volts"},
+            "output_voltage": {"type": "number", "description": "Output voltage in volts"},
+            "output_current": {"type": "number", "description": "Output current in amps"},
+            "min_stock": {
+                "type": "integer",
+                "description": "Minimum acceptable JLCPCB stock per part (default: 1)",
+            },
+            "prefer_basic": {
+                "type": "boolean",
+                "description": (
+                    "Warn on Extended Parts so Basic Parts can be prioritized "
+                    "(default: false)"
+                ),
+            },
+        },
+        required_params=("topology", "input_voltage", "output_voltage", "output_current"),
+    ),
+    ToolDefinition(
+        name="optimize_jlcpcb_assembly",
+        description=(
+            "Automatically select stocked JLCPCB parts for a generated design. "
+            "Prioritizes Basic Parts, tags chosen LCSC part numbers, and applies safe "
+            "footprint corrections when the selected package is known."
+        ),
+        parameters={
+            "topology": {"type": "string", "description": "Circuit topology"},
+            "input_voltage": {"type": "number", "description": "Input voltage in volts"},
+            "output_voltage": {"type": "number", "description": "Output voltage in volts"},
+            "output_current": {"type": "number", "description": "Output current in amps"},
+            "min_stock": {
+                "type": "integer",
+                "description": "Minimum acceptable JLCPCB stock per part (default: 1)",
+            },
+            "prefer_basic": {
+                "type": "boolean",
+                "description": "Prefer JLCPCB Basic Parts over Extended Parts (default: true)",
+            },
+        },
+        required_params=("topology", "input_voltage", "output_voltage", "output_current"),
+    ),
+    ToolDefinition(
+        name="generate_pcb_project",
+        description=(
+            "Generate full KiCad PCB artifacts for a design: JSON, BOM CSV, netlist, "
+            "KiCad project, placed/routed PCB, renders, Gerber zip, DRC summary, and "
+            "JLCPCB assembly-readiness report. Requires the KiCad/SKiDL distrobox "
+            "environment."
+        ),
+        parameters={
+            "topology": {"type": "string", "description": "Circuit topology"},
+            "input_voltage": {"type": "number", "description": "Input voltage in volts"},
+            "output_voltage": {"type": "number", "description": "Output voltage in volts"},
+            "output_current": {"type": "number", "description": "Output current in amps"},
+            "name": {
+                "type": "string",
+                "description": "Optional output/project name",
+            },
+            "output_dir": {
+                "type": "string",
+                "description": "Output directory path within the configured output root",
+            },
+            "route": {
+                "type": "boolean",
+                "description": "Run Freerouting if available (default: true)",
+            },
+            "render": {
+                "type": "boolean",
+                "description": "Render top/3D PNGs (default: true)",
+            },
+            "export_fab": {
+                "type": "boolean",
+                "description": "Export JLCPCB-ready Gerber zip (default: true)",
+            },
+            "run_drc": {
+                "type": "boolean",
+                "description": "Run kicad-cli DRC and return counts (default: true)",
+            },
+            "prefer_basic": {
+                "type": "boolean",
+                "description": (
+                    "Warn on Extended Parts in the assembly report so Basic Parts can "
+                    "be prioritized (default: false)"
+                ),
+            },
+            "optimize_parts": {
+                "type": "boolean",
+                "description": (
+                    "Apply automatic JLCPCB part substitutions before exporting "
+                    "(default: true)"
+                ),
             },
         },
         required_params=("topology", "input_voltage", "output_voltage", "output_current"),

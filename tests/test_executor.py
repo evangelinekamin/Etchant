@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -88,6 +89,53 @@ class TestValidateDesign:
         assert "errors" in result
         assert "warnings" in result
         assert len(result["errors"]) == 0
+
+
+class TestValidateJLCPCBAssembly:
+    def test_ldo_reports_basic_parts_and_manual_headers(
+        self,
+        executor: ToolExecutor,
+    ) -> None:
+        result = executor.execute("validate_jlcpcb_assembly", {
+            "topology": "ldo_regulator",
+            "input_voltage": 5.0,
+            "output_voltage": 3.3,
+            "output_current": 0.5,
+            "prefer_basic": True,
+        })
+
+        assert "error" not in result
+        assert result["assembly_ready"] is True
+        assert result["summary"]["basic_components"] >= 3
+        assert result["summary"]["error_count"] == 0
+        rules = {
+            issue["rule"]
+            for component in result["components"]
+            for issue in component["issues"]
+        }
+        assert "through_hole_manual_assembly" in rules
+
+
+class TestOptimizeJLCPCBAssembly:
+    def test_buck_applies_part_substitutions(
+        self,
+        executor: ToolExecutor,
+    ) -> None:
+        result = executor.execute("optimize_jlcpcb_assembly", {
+            "topology": "buck_converter",
+            "input_voltage": 12.0,
+            "output_voltage": 5.0,
+            "output_current": 2.0,
+            "prefer_basic": True,
+        })
+
+        assert "error" not in result
+        assert result["substitution_count"] >= 1
+        substitutions = {
+            sub["reference"]: sub for sub in result["substitutions"]
+        }
+        assert substitutions["R1"]["new"]["classification"] == "basic"
+        assert substitutions["R1"]["new"]["lcsc_part"] == "C17737"
 
 
 class TestEstimateCost:
@@ -189,6 +237,84 @@ class TestExportDesign:
         assert len(result["exported"]) == 2
 
 
+class TestGeneratePCBProject:
+    def test_invokes_full_pipeline(
+        self,
+        executor: ToolExecutor,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        calls: dict[str, Any] = {}
+
+        class FakePipelineResult:
+            def as_dict(self) -> dict[str, Any]:
+                return {
+                    "spec": {"topology": "ldo_regulator"},
+                    "paths": {"pcb": str(tmp_path / "demo.kicad_pcb")},
+                    "drc": {"errors": 0, "warnings": 0, "unconnected_pads": 0},
+                    "routed": False,
+                }
+
+        def fake_generate_pcb_artifacts(*args: Any, **kwargs: Any) -> FakePipelineResult:
+            calls["spec"] = args[0]
+            calls.update(kwargs)
+            return FakePipelineResult()
+
+        monkeypatch.setattr(
+            "etchant.kicad.pipeline.generate_pcb_artifacts",
+            fake_generate_pcb_artifacts,
+        )
+
+        result = executor.execute("generate_pcb_project", {
+            "topology": "ldo_regulator",
+            "input_voltage": 5.0,
+            "output_voltage": 3.3,
+            "output_current": 0.5,
+            "name": "demo_ldo",
+            "output_dir": str(tmp_path),
+            "route": False,
+            "render": False,
+            "prefer_basic": True,
+        })
+
+        assert "error" not in result
+        assert result["drc"]["errors"] == 0
+        assert calls["spec"].name == "demo_ldo"
+        assert calls["spec"].topology == "ldo_regulator"
+        assert calls["output_dir"] == tmp_path.resolve()
+        assert calls["route"] is False
+        assert calls["render"] is False
+        assert calls["export_fab"] is True
+        assert calls["run_drc"] is True
+        assert calls["prefer_basic"] is True
+        assert calls["optimize_parts"] is True
+
+    def test_reports_missing_kicad_environment(
+        self,
+        executor: ToolExecutor,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        def fake_generate_pcb_artifacts(*_args: Any, **_kwargs: Any) -> object:
+            raise RuntimeError("pcbnew is unavailable")
+
+        monkeypatch.setattr(
+            "etchant.kicad.pipeline.generate_pcb_artifacts",
+            fake_generate_pcb_artifacts,
+        )
+
+        result = executor.execute("generate_pcb_project", {
+            "topology": "ldo_regulator",
+            "input_voltage": 5.0,
+            "output_voltage": 3.3,
+            "output_current": 0.5,
+            "output_dir": str(tmp_path),
+        })
+
+        assert "error" in result
+        assert "pcbnew is unavailable" in result["error"]
+
+
 class TestPathTraversal:
     def test_export_rejects_path_outside_output(
         self, constraints_dir: Path, tmp_path: Path
@@ -200,6 +326,19 @@ class TestPathTraversal:
             "output_voltage": 3.3,
             "output_current": 0.5,
             "format": "json",
+            "output_dir": "/etc/evil",
+        })
+        assert "error" in result
+
+    def test_generate_pcb_rejects_path_outside_output(
+        self, constraints_dir: Path, tmp_path: Path
+    ) -> None:
+        executor = ToolExecutor(constraints_dir=constraints_dir, output_dir=tmp_path)
+        result = executor.execute("generate_pcb_project", {
+            "topology": "ldo_regulator",
+            "input_voltage": 5.0,
+            "output_voltage": 3.3,
+            "output_current": 0.5,
             "output_dir": "/etc/evil",
         })
         assert "error" in result

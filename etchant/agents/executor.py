@@ -12,11 +12,16 @@ from pathlib import Path
 from typing import Any
 
 from etchant.circuits import get_generator, list_topologies
+from etchant.core.assembly_validator import validate_jlcpcb_assembly
 from etchant.core.bom import BOMGenerator, CostBreakdown
-from etchant.core.component_selector import lookup_jlcpcb_part
+from etchant.core.component_selector import (
+    connect_default_parts_db,
+    lookup_jlcpcb_part,
+)
 from etchant.core.constraint_engine import ConstraintEngine, Severity
 from etchant.core.manufacturing import check_assembly_compatibility, estimate_board_cost
 from etchant.core.models import CircuitSpec
+from etchant.core.part_optimizer import optimize_jlcpcb_assembly
 from etchant.core.topology_advisor import recommend_topology
 from etchant.kicad.design_export import DesignExporter
 
@@ -32,6 +37,7 @@ class ToolExecutor:
         default_constraints = Path(__file__).parent.parent.parent / "constraints"
         self._constraints_dir = constraints_dir or default_constraints
         self._output_dir = (output_dir or Path("./output")).resolve()
+        connect_default_parts_db()
 
     def execute(self, tool_name: str, arguments: dict[str, Any]) -> dict[str, Any]:
         """Execute a tool call and return the result as a dict."""
@@ -43,6 +49,9 @@ class ToolExecutor:
             "lookup_jlcpcb_part": self._lookup_part,
             "suggest_topology": self._suggest_topology,
             "export_design": self._export_design,
+            "validate_jlcpcb_assembly": self._validate_jlcpcb_assembly,
+            "optimize_jlcpcb_assembly": self._optimize_jlcpcb_assembly,
+            "generate_pcb_project": self._generate_pcb_project,
         }
 
         handler = handlers.get(tool_name)
@@ -51,9 +60,9 @@ class ToolExecutor:
 
         try:
             return handler(arguments)
-        except Exception:
-            logger.exception("Tool '%s' failed", tool_name)
-            return {"error": f"Tool '{tool_name}' failed"}
+        except Exception as exc:
+            logger.debug("Tool '%s' failed", tool_name, exc_info=True)
+            return {"error": f"Tool '{tool_name}' failed: {_safe_error_message(exc)}"}
 
     def _list_topologies(self, _args: dict[str, Any]) -> dict[str, Any]:
         return {"topologies": list(list_topologies())}
@@ -205,12 +214,9 @@ class ToolExecutor:
 
         export_format = args.get("format", "both")
 
-        # Validate output_dir stays within configured output directory
-        requested = Path(args.get("output_dir", str(self._output_dir)))
-        resolved = requested.resolve()
-        if not resolved.is_relative_to(self._output_dir):
+        out_dir = self._resolve_output_dir(args.get("output_dir", str(self._output_dir)))
+        if out_dir is None:
             return {"error": f"output_dir must be within {self._output_dir}"}
-        out_dir = resolved
 
         exporter = DesignExporter(out_dir)
 
@@ -225,6 +231,81 @@ class ToolExecutor:
             result["exported"].append({"format": "csv", "path": str(csv_path)})
 
         return result
+
+    def _validate_jlcpcb_assembly(self, args: dict[str, Any]) -> dict[str, Any]:
+        """Check whether a generated design is ready for JLCPCB assembly."""
+        spec = self._make_spec(args)
+        generator = get_generator(spec.topology)
+        design = generator.generate(spec)
+
+        report = validate_jlcpcb_assembly(
+            design,
+            min_stock=int(args.get("min_stock", 1)),
+            prefer_basic=_bool_arg(args, "prefer_basic", False),
+        )
+        return report.as_dict()
+
+    def _optimize_jlcpcb_assembly(self, args: dict[str, Any]) -> dict[str, Any]:
+        """Apply automatic JLCPCB part substitutions to a generated design."""
+        spec = self._make_spec(args)
+        generator = get_generator(spec.topology)
+        design = generator.generate(spec)
+
+        result = optimize_jlcpcb_assembly(
+            design,
+            min_stock=int(args.get("min_stock", 1)),
+            prefer_basic=_bool_arg(args, "prefer_basic", True),
+        )
+        return result.as_dict()
+
+    def _generate_pcb_project(self, args: dict[str, Any]) -> dict[str, Any]:
+        """Generate full KiCad/Fab artifacts for an agent-selected design."""
+        from etchant.kicad.pipeline import build_spec, generate_pcb_artifacts
+
+        required = ("topology", "input_voltage", "output_voltage", "output_current")
+        missing = [k for k in required if k not in args]
+        if missing:
+            return {"error": f"Missing required parameters: {', '.join(missing)}"}
+
+        out_dir = self._resolve_output_dir(args.get("output_dir", str(self._output_dir)))
+        if out_dir is None:
+            return {"error": f"output_dir must be within {self._output_dir}"}
+
+        spec = build_spec(
+            name=args.get("name"),
+            topology=str(args["topology"]),
+            input_voltage=float(args["input_voltage"]),
+            output_voltage=float(args["output_voltage"]),
+            output_current=float(args["output_current"]),
+        )
+
+        try:
+            result = generate_pcb_artifacts(
+                spec,
+                output_dir=out_dir,
+                constraints_dir=self._constraints_dir,
+                route=_bool_arg(args, "route", True),
+                render=_bool_arg(args, "render", True),
+                export_fab=_bool_arg(args, "export_fab", True),
+                run_drc=_bool_arg(args, "run_drc", True),
+                prefer_basic=_bool_arg(args, "prefer_basic", False),
+                optimize_parts=_bool_arg(args, "optimize_parts", True),
+            )
+        except RuntimeError as e:
+            return {"error": str(e)}
+
+        return result.as_dict()
+
+    def _resolve_output_dir(self, requested: object) -> Path | None:
+        """Resolve output paths and reject escapes from configured root."""
+        requested_path = Path(str(requested))
+        if requested_path.is_absolute():
+            resolved = requested_path.resolve()
+        else:
+            resolved = (self._output_dir / requested_path).resolve()
+        if not resolved.is_relative_to(self._output_dir):
+            return None
+        return resolved
 
     def _make_spec(self, args: dict[str, Any]) -> CircuitSpec:
         required = ("topology", "input_voltage", "output_voltage", "output_current")
@@ -249,3 +330,21 @@ class ToolExecutor:
             output_current=iout,
             description=f"{topology}: {vin}V to {vout}V @ {iout}A",
         )
+
+
+def _bool_arg(args: dict[str, Any], name: str, default: bool) -> bool:
+    value = args.get(name, default)
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        return value.strip().lower() not in {"0", "false", "no", "off"}
+    return bool(value)
+
+
+def _safe_error_message(exc: Exception) -> str:
+    """Return useful tool errors without leaking local absolute paths."""
+    message = str(exc) or exc.__class__.__name__
+    for sensitive in {str(Path.home()), str(Path.cwd())}:
+        if sensitive:
+            message = message.replace(sensitive, "<path>")
+    return message

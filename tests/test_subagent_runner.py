@@ -26,8 +26,17 @@ class TestListTools:
         rc, data = _run(capsys, "--list-tools")
         assert rc == 0
         names = {t["name"] for t in data["tools"]}
-        assert {"generate_circuit", "validate_design", "estimate_cost",
-                "list_topologies", "suggest_topology"} <= names
+        expected = {
+            "estimate_cost",
+            "generate_circuit",
+            "generate_pcb_project",
+            "list_topologies",
+            "optimize_jlcpcb_assembly",
+            "suggest_topology",
+            "validate_design",
+            "validate_jlcpcb_assembly",
+        }
+        assert expected <= names
 
     def test_tool_schema_shape(self, capsys: pytest.CaptureFixture[str]) -> None:
         rc, data = _run(capsys, "--list-tools")
