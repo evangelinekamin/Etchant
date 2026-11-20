@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 import pytest
@@ -12,7 +13,13 @@ from etchant.data.webench_loader import (
     summarize_designs,
 )
 
-_WEBENCH_DIR = Path("/home/evangeline/Projects/etchant-data/data/webench")
+_REPO_ROOT = Path(__file__).resolve().parents[1]
+_WEBENCH_DIR = Path(
+    os.environ.get(
+        "ETCHANT_WEBENCH_DIR",
+        str(_REPO_ROOT.parent / "etchant-data" / "data" / "webench"),
+    )
+)
 _has_webench = _WEBENCH_DIR.exists()
 
 requires_webench = pytest.mark.skipif(

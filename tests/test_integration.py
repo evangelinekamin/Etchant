@@ -182,8 +182,8 @@ class TestExecutorIntegration:
             "output_voltage": 5.0,
             "output_current": 2.0,
         })
-        # 4 extended SMD parts ($3 each) + 2 pin headers (unknown, $3 each) = $18
-        assert cost["bom"]["assembly_setup_fee_usd"] == 18.0
+        # 2 extended SMD parts + 2 unknown pin headers; passives resolve Basic.
+        assert cost["bom"]["assembly_setup_fee_usd"] == 12.0
 
         # Step 5: Export
         export = executor.execute("export_design", {
