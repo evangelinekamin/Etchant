@@ -1,0 +1,5 @@
+# Cascade project config.
+# `verify.test` is the command Cascade's /solve and /pipeline run to check work.
+# etchant is uv-managed, so pytest lives behind `uv run`.
+verify:
+  test: uv run pytest tests/ -q
