@@ -60,15 +60,25 @@ class TestUSBCSinkProtection:
         ]
         assert {("U1", "5"), ("C2", "1"), ("J2", "1")} <= nets["5V_PROTECTED"]
 
-    def test_static_assembly_validation_has_no_blocking_errors(self) -> None:
+    def test_static_assembly_validation_flags_only_unsourced_usb_c_receptacle(
+        self,
+    ) -> None:
+        # The eFuse protection circuit (U1, D1, R1-R4, C1-C3) is fully sourced
+        # from the static JLCPCB table. J2 (output terminal block) and TP1
+        # (test point) are legitimately do-not-populate. J1, the USB-C
+        # receptacle, is not yet in the static parts table -- honestly
+        # blocking assembly until it is sourced, rather than a silent
+        # connector-category pass.
         set_parts_db(None)
         report = validate_jlcpcb_assembly(
             USBCSinkProtection().generate(_spec()),
             prefer_basic=True,
         )
 
-        assert report.assembly_ready is True
-        assert report.error_count == 0
+        blocking = {check.reference for check in report.checks if check.has_error}
+        assert blocking == {"J1"}
+        assert report.assembly_ready is False
+        assert report.error_count == 1
 
     def test_rejects_non_5v_power_path(self) -> None:
         with pytest.raises(ValueError, match="5V in to 5V out"):

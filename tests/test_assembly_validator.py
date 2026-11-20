@@ -58,8 +58,9 @@ def _component(
     value: str = "10k",
     footprint: str = "Resistor_SMD:R_0805_2012Metric",
     jlcpcb_part_number: str | None = None,
+    do_not_populate: bool = False,
 ) -> ComponentSpec:
-    return ComponentSpec(
+    kwargs: dict[str, object] = dict(
         reference=reference,
         category=category,
         value=value,
@@ -69,6 +70,11 @@ def _component(
         description="Test component",
         jlcpcb_part_number=jlcpcb_part_number,
     )
+    if do_not_populate:
+        # Policy (b): parts explicitly marked do-not-populate (hand-solder) are
+        # exempt from the JLC-orderable requirement but must still be surfaced.
+        kwargs["do_not_populate"] = True
+    return ComponentSpec(**kwargs)
 
 
 def _rules(report: AssemblyValidationReport) -> set[str]:
@@ -97,20 +103,55 @@ class TestValidateJLCPCBAssembly:
         assert report.error_count == 1
         assert "jlcpcb_part_missing" in _rules(report)
 
-    def test_missing_pin_header_is_manual_assembly_warning(self) -> None:
+    def test_board_with_unsourced_non_dnp_connector_is_not_ready(self) -> None:
+        # Policy (b) honesty fix -- the owner's false-confidence case. The SMD
+        # part resolves, but an unsourced connector that is NOT marked
+        # do-not-populate must make the board honestly NOT assembly-ready.
+        # (Today the CONNECTOR category is silently downgraded to a WARNING.)
+        report = validate_jlcpcb_assembly(_design(
+            _component(reference="R1"),  # 10k 0805 -> resolves
+            _component(
+                reference="J1",
+                category=ComponentCategory.CONNECTOR,
+                value="Conn_01x02",
+                footprint="Connector_PinHeader_2.54mm:PinHeader_1x02_P2.54mm_Vertical",
+            ),
+        ))
+
+        assert report.assembly_ready is False
+        assert report.error_count >= 1
+        assert report.matched_components >= 1  # R1 was fine; the connector blocks
+
+    def test_dnp_connector_is_allowed_but_surfaced(self) -> None:
+        # A connector explicitly marked do-not-populate (hand-solder) must not
+        # block assembly, but must still be surfaced -- not silently ignored.
         report = validate_jlcpcb_assembly(_design(_component(
             reference="J1",
             category=ComponentCategory.CONNECTOR,
             value="Conn_01x02",
             footprint="Connector_PinHeader_2.54mm:PinHeader_1x02_P2.54mm_Vertical",
+            do_not_populate=True,
+        )))
+
+        j1 = next(check for check in report.checks if check.reference == "J1")
+        assert report.assembly_ready is True
+        assert j1.has_error is False   # do-not-populate -> not blocking
+        assert j1.issues               # ...but still surfaced, not silently dropped
+
+    def test_dnp_through_hole_connector_is_ready_and_flagged(self) -> None:
+        report = validate_jlcpcb_assembly(_design(_component(
+            reference="J1",
+            category=ComponentCategory.CONNECTOR,
+            value="Conn_01x02",
+            footprint="Connector_PinHeader_2.54mm:PinHeader_1x02_P2.54mm_Vertical",
+            do_not_populate=True,
         )))
 
         assert report.assembly_ready is True
         assert report.error_count == 0
-        assert "jlcpcb_part_missing" in _rules(report)
         assert "through_hole_manual_assembly" in _rules(report)
 
-    def test_smd_pin_header_is_not_manual_assembly_warning(self) -> None:
+    def test_dnp_smd_connector_is_ready(self) -> None:
         report = validate_jlcpcb_assembly(_design(_component(
             reference="J1",
             category=ComponentCategory.CONNECTOR,
@@ -119,10 +160,10 @@ class TestValidateJLCPCBAssembly:
                 "Connector_PinHeader_2.54mm:"
                 "PinHeader_1x02_P2.54mm_Vertical_SMD_Pin1Left"
             ),
+            do_not_populate=True,
         )))
 
         assert report.assembly_ready is True
-        assert "jlcpcb_part_missing" in _rules(report)
         assert "through_hole_manual_assembly" not in _rules(report)
 
     def test_footprint_package_mismatch_is_error(self) -> None:

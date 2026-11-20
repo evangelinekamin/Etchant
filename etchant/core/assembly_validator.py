@@ -152,16 +152,14 @@ def _check_component(
 
     if part is None:
         severity = (
-            AssemblySeverity.WARNING
-            if comp.category == ComponentCategory.CONNECTOR
-            else AssemblySeverity.ERROR
+            AssemblySeverity.WARNING if comp.do_not_populate else AssemblySeverity.ERROR
         )
         issues.append(AssemblyIssue(
             rule="jlcpcb_part_missing",
             severity=severity,
             message=(
-                "No matching LCSC/JLCPCB part found; exclude from PCBA or choose "
-                "a stocked assembly part."
+                "No matching LCSC/JLCPCB part found; mark do_not_populate for "
+                "hand-solder, exclude from PCBA, or choose a stocked assembly part."
             ),
         ))
         classification = PartClassification.UNKNOWN

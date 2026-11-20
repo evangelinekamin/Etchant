@@ -149,6 +149,7 @@ class ESP32C3Breakout:
                 kicad_library="Connector_Generic",
                 kicad_symbol="Conn_01x06",
                 description="Header: 5V GND TX RX IO0 EN",
+                do_not_populate=True,
             ),
             # GPIO breakout header
             ComponentSpec(
@@ -162,6 +163,7 @@ class ESP32C3Breakout:
                 kicad_library="Connector_Generic",
                 kicad_symbol="Conn_01x08",
                 description="GPIO breakout header",
+                do_not_populate=True,
             ),
         )
 

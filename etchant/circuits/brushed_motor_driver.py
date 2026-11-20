@@ -97,6 +97,7 @@ class BrushedMotorDriver:
                 kicad_library="Connector_Generic",
                 kicad_symbol="Conn_01x02",
                 description="Motor output terminal: OUT1, OUT2",
+                do_not_populate=True,
             ),
             ComponentSpec(
                 reference="J2",
@@ -109,6 +110,7 @@ class BrushedMotorDriver:
                 kicad_library="Connector_Generic",
                 kicad_symbol="Conn_01x05",
                 description="Control/power header: VM, GND, IN1, IN2, nSLEEP",
+                do_not_populate=True,
             ),
         )
 

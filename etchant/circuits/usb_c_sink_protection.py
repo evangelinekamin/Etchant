@@ -199,6 +199,7 @@ class USBCSinkProtection:
                 kicad_library="Connector_Generic",
                 kicad_symbol="Conn_01x02",
                 description="Protected output terminal: 5V, GND",
+                do_not_populate=True,
             ),
             ComponentSpec(
                 reference="TP1",
@@ -208,6 +209,7 @@ class USBCSinkProtection:
                 kicad_library="Connector",
                 kicad_symbol="TestPoint",
                 description="eFuse fault flag test point",
+                do_not_populate=True,
             ),
         )
 

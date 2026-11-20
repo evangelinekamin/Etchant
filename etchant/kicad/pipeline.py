@@ -25,10 +25,48 @@ from etchant.core.models import CircuitSpec, DesignResult
 from etchant.core.part_optimizer import optimize_jlcpcb_assembly
 from etchant.core.serialization import save_design
 from etchant.kicad.design_export import DesignExporter
+from etchant.sim.buck_verifier import verify_buck
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_CONSTRAINTS_DIR = REPO_ROOT / "constraints"
 DEFAULT_OUTPUT_DIR = REPO_ROOT / "output" / "demo"
+
+
+class ElectricalVerificationError(RuntimeError):
+    """Raised when a design fails hard electrical (SPICE) verification.
+
+    Distinct from the KiCad-environment RuntimeErrors: this means the board is
+    electrically wrong (a buck that regulates to the wrong output voltage), not
+    that a tool is missing. Subclasses RuntimeError so existing pipeline error
+    handling surfaces it to callers.
+    """
+
+
+# Topologies whose regulated output voltage is checked by the buck SPICE gate.
+# Boost/LDO designs also use feedback dividers but with different electrical
+# semantics, so the gate is scoped by topology and they get their own verifiers.
+_BUCK_TOPOLOGIES = frozenset({"buck_converter", "buck_converter_lm2596"})
+
+
+def _verify_buck_electrical(design: DesignResult) -> None:
+    """Hard electrical gate: block buck designs that regulate to a wrong Vout.
+
+    Runs the SPICE output-voltage check for buck-topology designs only, and
+    raises ElectricalVerificationError when an adjustable buck's simulated
+    output misses its target. Non-buck topologies and fixed-output bucks (no
+    feedback divider) pass through untouched. A simulation failure (e.g. ngspice
+    not installed) propagates, so the gate fails safe rather than passing an
+    unverified board.
+    """
+    if design.spec.topology not in _BUCK_TOPOLOGIES:
+        return
+    result = verify_buck(design)
+    if result.applicable and not result.passed:
+        raise ElectricalVerificationError(
+            f"Buck failed electrical verification: {result.detail}. "
+            "Refusing to export fabrication files for an electrically "
+            "incorrect board."
+        )
 
 
 @dataclass(frozen=True)
@@ -144,6 +182,10 @@ def generate_pcb_artifacts(
     Raises RuntimeError if the KiCad/SKiDL environment is unavailable. This is
     expected outside the distrobox and should be surfaced by callers as a tool
     capability error.
+
+    Raises ElectricalVerificationError (a RuntimeError) before any board build
+    or fab export if a buck design fails SPICE output-voltage verification, so
+    an electrically incorrect board never produces fabrication files.
     """
     configure_kicad_environment()
     connect_default_parts_db()
@@ -164,6 +206,12 @@ def generate_pcb_artifacts(
     engine = ConstraintEngine(constraints_dir)
     violations = engine.validate_design(design)
     errors = [v for v in violations if v.severity == Severity.ERROR]
+
+    # Hard electrical gate (buck topologies): a converter that regulates to the
+    # wrong output voltage must not reach board build or fab export, even when
+    # the advisory checks above pass it clean. Fails fast, before any files that
+    # a fab would act on are written.
+    _verify_buck_electrical(design)
 
     bom = BOMGenerator().generate(design)
     cost = CostBreakdown.from_bom(bom)

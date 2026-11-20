@@ -41,6 +41,23 @@ ETCHANT_DISTROBOX_IMAGE=docker.io/library/ubuntu:24.04 ./setup-distrobox.sh
 ETCHANT_DISTROBOX_VENV=/path/to/venv ./setup-distrobox.sh
 ```
 
+## SPICE Verification
+
+Etchant can electrically verify a generated design by simulating it with
+[ngspice](https://ngspice.sourceforge.io/). Like `kicad-cli` and Freerouting,
+ngspice is a system binary that Etchant shells out to, not a pip package.
+Install it before running the simulation gate:
+
+```bash
+sudo apt-get install -y ngspice
+ngspice --version
+```
+
+The `etchant.sim` package translates an adjustable buck converter into a
+behavioural ngspice deck, runs it in batch mode, and checks the regulated
+output voltage against the requested target. The runner raises a clear,
+actionable error if the `ngspice` binary is not on `PATH`.
+
 ## Design Gauntlet
 
 Run the seeded PCB idea gauntlet to see what Etchant can generate today and

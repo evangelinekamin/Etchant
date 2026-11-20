@@ -177,6 +177,7 @@ class GenerativeLDORegulator:
                 kicad_library="Connector_Generic",
                 kicad_symbol="Conn_01x02",
                 description="Input header: VIN, GND",
+                do_not_populate=True,
             ),
             ComponentSpec(
                 reference="J2",
@@ -189,6 +190,7 @@ class GenerativeLDORegulator:
                 kicad_library="Connector_Generic",
                 kicad_symbol="Conn_01x02",
                 description="Output header: VOUT, GND",
+                do_not_populate=True,
             ),
         ]
 
