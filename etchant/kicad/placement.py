@@ -121,10 +121,17 @@ class ComponentPlacer:
         # Fill zones and patch JLCPCB rules via a reload cycle. Doing the
         # fill on the in-memory board crashes pcbnew when called before
         # the initial save — safer to load the saved file fresh.
-        from etchant.kicad.design_rules import apply_jlcpcb_rules, fill_zones_on_disk
+        from etchant.kicad.design_rules import (
+            apply_jlcpcb_rules,
+            fill_zones_on_disk,
+            power_trace_width_mm,
+        )
         fill_zones_on_disk(output_path)
         pro_path = output_path.with_suffix(".kicad_pro")
-        apply_jlcpcb_rules(pro_path)
+        apply_jlcpcb_rules(
+            pro_path,
+            power_track_width_mm=power_trace_width_mm(design.spec.output_current),
+        )
 
         return output_path
 

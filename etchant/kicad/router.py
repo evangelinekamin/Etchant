@@ -44,11 +44,19 @@ class FreeroutingRouter:
         self._jar = freerouting_jar or _FREEROUTING_JAR
         self._max_passes = max_passes
 
-    def route_board(self, pcb_path: Path) -> Path:
+    def route_board(
+        self, pcb_path: Path, power_track_width_mm: float | None = None,
+    ) -> Path:
         """Route all unconnected nets on a .kicad_pcb board.
 
         Exports DSN, runs Freerouting, imports SES result.
         Returns path to the routed board (modifies in place).
+
+        ``power_track_width_mm`` is forwarded to the final
+        apply_jlcpcb_rules call. Needed because pcbnew's board.Save
+        strips unused netclasses from .kicad_pro — the Power class has
+        no tracks assigned yet at save time, so it gets dropped and the
+        re-apply must explicitly restore the placer's per-design width.
         """
         if not HAS_PCBNEW:
             raise RuntimeError("pcbnew not available")
@@ -112,15 +120,26 @@ class FreeroutingRouter:
         # Re-fill zones after routing. SES import can add vias that connect
         # pads to the GND pour — the pour must be re-filled or those pads
         # show up as unconnected/dangling in DRC.
+        #
+        # Note: we keep the Power netclass in .kicad_pro as metadata
+        # (shows up in KiCad's Design Rules UI, useful to humans who
+        # edit the board by hand) but don't post-widen tracks here.
+        # Freerouting reserves only ~0.15mm of clearance around pads when
+        # routing at the Default 0.2mm, so any widening causes shorting
+        # DRC errors. The proper fix would be to thread the Power width
+        # into the DSN export so Freerouting reserves wider channels up
+        # front — tracked as future work.
         from etchant.kicad.design_rules import apply_jlcpcb_rules, fill_zones
         fill_zones(board)
 
         board.Save(str(pcb_path))
         logger.info("Board saved with routes: %s", pcb_path)
 
-        # Re-apply JLCPCB rules — the load/save cycle can stomp them.
+        # Re-apply JLCPCB rules — board.Save strips unused netclasses
+        # (the Power class has no tracks assigned in the saved pcb yet,
+        # so pcbnew considers it unused and drops it from .kicad_pro).
         pro_path = pcb_path.with_suffix(".kicad_pro")
-        apply_jlcpcb_rules(pro_path)
+        apply_jlcpcb_rules(pro_path, power_track_width_mm=power_track_width_mm)
 
         # Clean up temp files
         dsn_path.unlink(missing_ok=True)
@@ -137,3 +156,5 @@ class FreeroutingRouter:
         if matches:
             return int(matches[-1])
         return -1
+
+

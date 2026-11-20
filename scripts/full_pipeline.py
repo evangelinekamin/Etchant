@@ -93,12 +93,19 @@ def run_design(name, topology_cls, vin, vout, iout):
     placer.create_board(design, pcb_path)
     print(f"  PCB: {pcb_path} ({pcb_path.stat().st_size} bytes)")
 
-    # Autoroute with Freerouting
+    # Autoroute with Freerouting. Pass the spec's output current so the
+    # router's post-save rules re-apply uses the correct Power width —
+    # pcbnew drops unused netclasses on save, so the router has to
+    # restore them explicitly with the placer's per-design value.
     from etchant.kicad.router import FreeroutingRouter, check_freerouting_available
+    from etchant.kicad.design_rules import power_trace_width_mm
     if check_freerouting_available():
         router = FreeroutingRouter(max_passes=20)
         try:
-            router.route_board(pcb_path)
+            router.route_board(
+                pcb_path,
+                power_track_width_mm=power_trace_width_mm(spec.output_current),
+            )
             print(f"  Routed: {pcb_path.stat().st_size} bytes (Freerouting)")
         except Exception as e:
             print(f"  Routing failed: {e}")

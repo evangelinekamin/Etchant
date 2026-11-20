@@ -44,11 +44,52 @@ def load_jlcpcb_rules() -> dict[str, float]:
     }
 
 
-def apply_jlcpcb_rules(kicad_pro_path: Path) -> None:
+# Net-name patterns that should be routed on the Power netclass with
+# thicker traces. Matched as substrings (case-insensitive). Covers
+# voltage rails (VIN/VOUT/3V3/5V), ground, switching nodes, and common
+# battery/supply names. Signal nets (TX, RX, SDA, SCL, IO*, FB, EN)
+# intentionally excluded — they don't need the extra copper.
+POWER_NET_PATTERNS = (
+    "VIN", "VOUT", "GND", "SW", "SW_NODE",
+    "3V3", "5V", "12V", "24V",
+    "VCC", "VDD", "VSS", "VBAT", "BAT+", "BAT-",
+)
+_POWER_NET_PATTERNS = POWER_NET_PATTERNS  # backwards-compat alias
+
+
+def power_trace_width_mm(current_a: float) -> float:
+    """Trace width (mm) for a given current on JLCPCB's default 1oz copper.
+
+    Derived from IPC-2221 Fig 6-4 for external layers, 10°C temperature
+    rise, 1oz copper (JLCPCB's default). Approximates the curve as
+    W ≈ 0.5 * I^0.7 mm, which hits:
+      0.5A -> 0.3mm,  1A -> 0.5mm,  2A -> 0.8mm,  3A -> 1.1mm,  5A -> 1.5mm
+
+    Rounded to the nearest 0.1mm and clamped to 0.3mm..1.5mm so
+    Freerouting can always route the net without overflowing narrow
+    channels on small boards.
+    """
+    if current_a <= 0:
+        return 0.3
+    import math
+    width = 0.5 * math.pow(current_a, 0.7)
+    rounded = max(0.3, min(1.5, round(width + 0.05, 1)))
+    return rounded
+
+
+def apply_jlcpcb_rules(
+    kicad_pro_path: Path,
+    power_track_width_mm: float | None = None,
+) -> None:
     """Patch a .kicad_pro file with JLCPCB DRC rules and default netclass.
 
-    Safe to call repeatedly — idempotent. Creates the file structure if
-    any keys are missing.
+    ``power_track_width_mm`` sizes the Power netclass. Pass
+    ``power_trace_width_mm(design.spec.output_current)`` from the placer.
+    If None, preserves any existing width (so the router's defensive
+    re-apply doesn't stomp the placer's per-design value) or uses 0.5mm
+    as a first-time default.
+
+    Safe to call repeatedly — idempotent.
     """
     if not kicad_pro_path.exists():
         logger.warning("No .kicad_pro at %s; skipping rules patch", kicad_pro_path)
@@ -88,6 +129,49 @@ def apply_jlcpcb_rules(kicad_pro_path: Path) -> None:
     default_class["track_width"] = 0.2
     default_class["via_diameter"] = 0.6
     default_class["via_drill"] = jlc["min_via_drill"]
+
+    # Power netclass — thicker traces for voltage rails and ground.
+    power_class = None
+    for cls in classes:
+        if cls.get("name") == "Power":
+            power_class = cls
+            break
+    if power_class is None:
+        power_class = {"name": "Power"}
+        classes.append(power_class)
+
+    # Resolve effective width: explicit caller value > existing value > 0.5mm.
+    effective_width = (
+        power_track_width_mm
+        if power_track_width_mm is not None
+        else power_class.get("track_width", 0.5)
+    )
+    effective_via = max(0.6, effective_width + 0.3)
+
+    power_class["clearance"] = jlc["min_clearance"]
+    power_class["track_width"] = effective_width
+    power_class["via_diameter"] = effective_via
+    power_class["via_drill"] = jlc["min_via_drill"]
+    power_class["bus_width"] = 12
+    power_class["diff_pair_gap"] = 0.25
+    power_class["diff_pair_width"] = 0.2
+    power_class["line_style"] = 0
+    power_class["microvia_diameter"] = 0.3
+    power_class["microvia_drill"] = 0.1
+    power_class["priority"] = 0
+    power_class["pcb_color"] = "rgba(0, 0, 0, 0.000)"
+    power_class["schematic_color"] = "rgba(0, 0, 0, 0.000)"
+    power_class["wire_width"] = 6
+
+    # Assign power nets to the Power class via name patterns. KiCad's
+    # netclass pattern syntax uses * / ? wildcards; exact names below
+    # cover most power rails in the demo topologies without pulling in
+    # signal lines that happen to share a prefix (e.g. EN).
+    patterns_entries = [
+        {"netclass": "Power", "pattern": name}
+        for name in _POWER_NET_PATTERNS
+    ]
+    net_settings["netclass_patterns"] = patterns_entries
 
     # Silk warnings that clutter reports for hobby-grade boards — downgrade
     rule_severities = design_settings.setdefault("rule_severities", {})
