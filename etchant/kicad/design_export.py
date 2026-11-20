@@ -13,6 +13,7 @@ import json
 from pathlib import Path
 
 from etchant.core.bom import BOMGenerator
+from etchant.core.jlcpcb_export import aggregate_jlcpcb_bom, write_jlcpcb_bom_csv
 from etchant.core.models import DesignResult
 
 
@@ -73,8 +74,24 @@ class DesignExporter:
             json.dump(data, f, indent=2)
         return path
 
+    def export_jlcpcb_bom_csv(self, design: DesignResult) -> Path:
+        """Export a BOM in JLCPCB's upload format (Comment/Designator/Footprint/LCSC).
+
+        One row per unique part, ready to drop into a JLCPCB PCBA order alongside
+        the Gerbers and CPL.
+        """
+        bom = BOMGenerator().generate(design)
+        rows = aggregate_jlcpcb_bom(bom)
+        return write_jlcpcb_bom_csv(
+            rows, self._output_dir / f"{design.spec.name}_jlcpcb_bom.csv"
+        )
+
     def export_bom_csv(self, design: DesignResult) -> Path:
-        """Export a BOM as a JLCPCB-compatible CSV."""
+        """Export a human-review BOM CSV (one row per reference, with classification).
+
+        For ordering, use :meth:`export_jlcpcb_bom_csv`, which emits JLCPCB's
+        required column format.
+        """
         self._output_dir.mkdir(parents=True, exist_ok=True)
 
         bom_gen = BOMGenerator()

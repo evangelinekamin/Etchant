@@ -131,7 +131,9 @@ def generate(
             click.echo(f"  JSON: {json_path}")
         if export_csv:
             csv_path = exporter.export_bom_csv(design)
-            click.echo(f"  BOM CSV: {csv_path}")
+            click.echo(f"  BOM CSV (review): {csv_path}")
+            jlc_bom_path = exporter.export_jlcpcb_bom_csv(design)
+            click.echo(f"  BOM CSV (JLCPCB upload): {jlc_bom_path}")
 
     # KiCad netlist generation
     if check_skidl_available():
