@@ -92,15 +92,36 @@ uv run pytest tests/ -v --cov   # Run tests
 uv run ruff check etchant/ tests/  # Lint
 ```
 
+The normal `uv` environment is enough for the agent, JLCPCB selection, JSON/CSV
+exports, and most tests. Full KiCad board generation also needs KiCad's system
+Python module (`pcbnew`), which cannot be installed from PyPI.
+
 ## Distrobox Environment
 
 ```bash
-./setup-distrobox.sh            # Create container with KiCad 9 + SKiDL
+./setup-distrobox.sh            # Install distrobox if needed, then create/update container
 distrobox enter etchant-dev     # Enter container
+cd "$ETCHANT_REPO_DIR"
+uv run pytest tests/ -q
 ```
 
-KiCad 9.0.8, pcbnew, ngspice all verified working inside distrobox.
+The distrobox uses a separate `.venv-distrobox` environment with system site
+packages enabled so `uv run` can import `pcbnew`.
 Full pipeline: CircuitSpec -> DesignResult -> SKiDL netlist -> KiCad project.
+
+## Design Gauntlet
+
+```bash
+uv run python scripts/run_design_gauntlet.py
+uv run python scripts/run_design_gauntlet.py --limit 2
+distrobox enter etchant-dev
+cd "$ETCHANT_REPO_DIR"
+uv run python scripts/run_design_gauntlet.py --full-pcb --case buck_12v_to_5v_2a
+```
+
+Default output: `output/gauntlet/report.md` plus per-case JSON, BOM CSV, and
+SVG block previews. `--full-pcb` adds KiCad artifacts when the distrobox backend
+is available.
 
 ## Gotchas
 
