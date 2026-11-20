@@ -136,7 +136,15 @@ def _place_buck(design: DesignResult) -> tuple[dict[str, Position], float, float
 
 
 def _place_ldo(design: DesignResult) -> tuple[dict[str, Position], float, float]:
-    """Place LDO: Cin -> IC -> Cout vertical, feedback to side."""
+    """Place LDO linearly: J1 -> C_in -> U1 -> C_out -> J2.
+
+    The AMS1117 datasheet requires C_in (input bypass) to be as close as
+    physically possible to the VI pin. Putting both caps on the output
+    side of U1 — which the previous version did — forces the input rail
+    from J1 to route around U1's body to reach C_in, adding inductance
+    and a GND return loop. Correct layout is linear: input cap on the
+    input side, output cap on the output side.
+    """
     positions: dict[str, Position] = {}
 
     ic = _find_by_category(design, ComponentCategory.IC)
@@ -149,30 +157,28 @@ def _place_ldo(design: DesignResult) -> tuple[dict[str, Position], float, float]
     ic_size = _get_footprint_size(design, ic)
     cap_size = _get_footprint_size(design, c_in)
 
-    # Vertical spacing: cap adjacent to IC pin
-    cap_to_ic = (cap_size[1] / 2 + ic_size[1] / 2 + _MIN_CLEARANCE)
-    cap_to_ic = _get_constraint_distance(design, c_in, cap_to_ic)
-
-    # Cap offset: place caps adjacent to IC pins using actual dimensions
+    # Horizontal cap-to-IC spacing: half-widths + 0.5mm clearance.
     cap_offset_x = ic_size[0] / 2 + cap_size[0] / 2 + 0.5
 
     cx = _PAGE_X + 10
-    cy = _PAGE_Y + cap_to_ic + 5
+    cy = _PAGE_Y + 10
 
     if c_in:
-        positions[c_in] = Position(cx + cap_offset_x, cy - cap_to_ic, 90)
+        # Input cap on the LEFT of U1 (same side as J1/VIN).
+        positions[c_in] = Position(cx - cap_offset_x, cy, 90)
     if ic:
         positions[ic] = Position(cx, cy)
     if c_out:
-        positions[c_out] = Position(cx + cap_offset_x, cy + cap_to_ic, 90)
+        # Output cap on the RIGHT of U1 (same side as J2/VOUT).
+        positions[c_out] = Position(cx + cap_offset_x, cy, 90)
 
-    # Feedback resistors to the right
+    # Feedback resistors (adjustable variant only): tuck below the IC so
+    # they don't steal the horizontal caps' slots on either side.
     res_size = _get_footprint_size(design, resistors[0] if resistors else None)
+    res_y = cy + ic_size[1] / 2 + res_size[1] / 2 + _MIN_CLEARANCE + 1.0
+    res_spacing = max(4.5, res_size[0] + 1.5)
     for i, ref in enumerate(resistors):
-        positions[ref] = Position(
-            cx + ic_size[0] / 2 + res_size[0] / 2 + 2,
-            cy - 1 + i * max(4.5, res_size[1] + 1.5),
-        )
+        positions[ref] = Position(cx - 1 + i * res_spacing, res_y)
 
     _add_power_connectors(positions, design)
     return _finalize(positions, design)
