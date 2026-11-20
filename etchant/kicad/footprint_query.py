@@ -56,6 +56,23 @@ class FootprintInfo:
     height_mm: float  # Y extent
 
 
+@dataclass(frozen=True)
+class FootprintOffsets:
+    """Signed bbox offsets from the footprint origin (mm).
+
+    THT pin headers' origin sits at pad 1, not the geometric center,
+    so the body is asymmetric: -1.79..+9.41mm for a 1x04 vertical
+    header. Treating it as symmetric ``height/2`` on each side of the
+    center undersizes the board by 3mm and clips silk/pads off the
+    bottom edge.
+    """
+
+    dx_left: float    # negative (or zero)
+    dx_right: float   # positive (or zero)
+    dy_top: float     # negative (or zero)
+    dy_bottom: float  # positive (or zero)
+
+
 def get_footprint_dimensions(footprint_str: str) -> FootprintInfo:
     """Get the bounding box dimensions of a footprint.
 
@@ -135,6 +152,65 @@ def _query_pcbnew(footprint_str: str) -> tuple[float, float] | None:
         logger.debug("Failed to load footprint: %s", footprint_str)
 
     return None
+
+
+def get_footprint_offsets(footprint_str: str) -> FootprintOffsets | None:
+    """Return signed bbox offsets (dx_left, dx_right, dy_top, dy_bottom).
+
+    Used when placing asymmetric footprints (THT pin headers, large
+    modules with off-center reference points) whose bodies extend
+    unequally from the footprint origin. Returns None when pcbnew
+    isn't available — callers should fall back to symmetric half-
+    extents.
+    """
+    if not HAS_PCBNEW:
+        return None
+    parts = footprint_str.split(":")
+    if len(parts) != 2:
+        return None
+    lib_name, fp_name = parts
+    lib_path = f"/usr/share/kicad/footprints/{lib_name}.pretty"
+    if not Path(lib_path).exists():
+        return None
+    try:
+        fp = pcbnew.FootprintLoad(lib_path, fp_name)
+        if fp is None:
+            return None
+        bbox = fp.GetBoundingBox(False, False)
+        return FootprintOffsets(
+            dx_left=pcbnew.ToMM(bbox.GetLeft()),
+            dx_right=pcbnew.ToMM(bbox.GetRight()),
+            dy_top=pcbnew.ToMM(bbox.GetTop()),
+            dy_bottom=pcbnew.ToMM(bbox.GetBottom()),
+        )
+    except Exception:
+        return None
+
+
+def get_footprint_pad_offsets(footprint_str: str) -> FootprintOffsets | None:
+    """Same as get_footprint_offsets but for pads only."""
+    if not HAS_PCBNEW:
+        return None
+    parts = footprint_str.split(":")
+    if len(parts) != 2:
+        return None
+    lib_name, fp_name = parts
+    lib_path = f"/usr/share/kicad/footprints/{lib_name}.pretty"
+    if not Path(lib_path).exists():
+        return None
+    try:
+        fp = pcbnew.FootprintLoad(lib_path, fp_name)
+        if fp is None:
+            return None
+        bbox = fp.GetFpPadsLocalBbox()
+        return FootprintOffsets(
+            dx_left=pcbnew.ToMM(bbox.GetLeft()),
+            dx_right=pcbnew.ToMM(bbox.GetRight()),
+            dy_top=pcbnew.ToMM(bbox.GetTop()),
+            dy_bottom=pcbnew.ToMM(bbox.GetBottom()),
+        )
+    except Exception:
+        return None
 
 
 def _query_pcbnew_pads(footprint_str: str) -> tuple[float, float] | None:

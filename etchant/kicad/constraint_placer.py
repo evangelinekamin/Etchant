@@ -557,23 +557,52 @@ def _to_page_coords(
             if c.category == ComponentCategory.CONNECTOR
         }
 
-    def extent_for(ref: str, p: PlacedComponent) -> tuple[float, float]:
-        if ref in connector_refs and design is not None:
-            from etchant.kicad.footprint_query import get_footprint_pad_dimensions
-            comp = next((c for c in design.components if c.reference == ref), None)
-            if comp is not None:
-                info = get_footprint_pad_dimensions(comp.footprint)
-                if info.width_mm > 0 and info.height_mm > 0:
-                    # Project pad dims into the placement's rotation frame
-                    if p.rotation == 90:
-                        return info.height_mm / 2, info.width_mm / 2
-                    return info.width_mm / 2, info.height_mm / 2
-        return p.width / 2, p.height / 2
+    def corners_for(ref: str, p: PlacedComponent) -> tuple[float, float, float, float]:
+        """Return (left, right, top, bottom) board-coord edges of a part.
 
-    lefts = [p.x - extent_for(ref, p)[0] for ref, p in placed.items()]
-    rights = [p.x + extent_for(ref, p)[0] for ref, p in placed.items()]
-    tops = [p.y - extent_for(ref, p)[1] for ref, p in placed.items()]
-    bottoms = [p.y + extent_for(ref, p)[1] for ref, p in placed.items()]
+        Uses signed bbox offsets from pcbnew (for asymmetric footprints
+        like THT pin headers whose origin is at pad 1, not the body
+        center). For connectors, pad-only offsets drive the X axis (so
+        pads land at the edge with housing overhang) while full-body
+        offsets drive the Y axis (so tall silk bodies don't clip off).
+        """
+        if design is None:
+            return p.x - p.width / 2, p.x + p.width / 2, p.y - p.height / 2, p.y + p.height / 2
+
+        from etchant.kicad.footprint_query import (
+            get_footprint_offsets,
+            get_footprint_pad_offsets,
+        )
+        comp = next((c for c in design.components if c.reference == ref), None)
+        if comp is None:
+            return p.x - p.width / 2, p.x + p.width / 2, p.y - p.height / 2, p.y + p.height / 2
+
+        body = get_footprint_offsets(comp.footprint)
+        if body is None:
+            return p.x - p.width / 2, p.x + p.width / 2, p.y - p.height / 2, p.y + p.height / 2
+
+        # Apply rotation to the local offsets. Only 0 and 90 are used by
+        # the placer — handle both explicitly.
+        bl, br, bt, bb = body.dx_left, body.dx_right, body.dy_top, body.dy_bottom
+        if p.rotation == 90:
+            # 90° CW: local +x → world -y, local +y → world +x
+            bl, br, bt, bb = bt, bb, -br, -bl
+
+        if ref in connector_refs:
+            pad = get_footprint_pad_offsets(comp.footprint)
+            if pad is not None:
+                pl, pr, pt, pb = pad.dx_left, pad.dx_right, pad.dy_top, pad.dy_bottom
+                if p.rotation == 90:
+                    pl, pr, pt, pb = pt, pb, -pr, -pl
+                # Use pad offsets in X, body offsets in Y.
+                return p.x + pl, p.x + pr, p.y + bt, p.y + bb
+
+        return p.x + bl, p.x + br, p.y + bt, p.y + bb
+
+    lefts, rights, tops, bottoms = [], [], [], []
+    for ref, p in placed.items():
+        l, r, t, b = corners_for(ref, p)
+        lefts.append(l); rights.append(r); tops.append(t); bottoms.append(b)
     envelope_x = (min(lefts), max(rights))
     envelope_y = (min(tops), max(bottoms))
     envelope_w = envelope_x[1] - envelope_x[0]

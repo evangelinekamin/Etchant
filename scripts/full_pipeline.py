@@ -198,6 +198,13 @@ dirs.append(run_design(
     5.0, 3.3, 0.5,
 ))
 
+from etchant.circuits.op_amp_buffer import OpAmpBufferCircuit
+dirs.append(run_design(
+    "opamp_buffer_5v",
+    OpAmpBufferCircuit,
+    5.0, 5.0, 0.022,
+))
+
 # Zip everything
 zip_path = OUTPUT_BASE / "etchant_demo.zip"
 print(f"\n{'='*60}")

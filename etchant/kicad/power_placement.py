@@ -535,24 +535,49 @@ def _finalize(
             if c.category == ComponentCategory.CONNECTOR
         }
 
-    def half_extent(ref: str, pos: Position) -> tuple[float, float]:
+    def corners(ref: str, pos: Position) -> tuple[float, float, float, float]:
+        """Return (left, right, top, bottom) for a placed component.
+
+        Uses signed bbox offsets from pcbnew (handles THT pin headers
+        whose origin is pad 1, not body center). For connectors, pad
+        offsets drive X (pads at board edge) while body offsets drive
+        Y (tall silk body stays on board).
+        """
         if design is None:
-            return 1.5, 1.5
-        if ref in connector_refs:
-            w, h = _get_pad_size(design, ref)
-        else:
-            w, h = _get_footprint_size(design, ref)
+            return pos.x - 1.5, pos.x + 1.5, pos.y - 1.5, pos.y + 1.5
+
+        from etchant.kicad.footprint_query import (
+            get_footprint_offsets,
+            get_footprint_pad_offsets,
+        )
+        comp = next((c for c in design.components if c.reference == ref), None)
+        if comp is None:
+            full_w, full_h = _get_footprint_size(design, ref)
+            return pos.x - full_w / 2, pos.x + full_w / 2, pos.y - full_h / 2, pos.y + full_h / 2
+
+        body = get_footprint_offsets(comp.footprint)
+        if body is None:
+            full_w, full_h = _get_footprint_size(design, ref)
+            return pos.x - full_w / 2, pos.x + full_w / 2, pos.y - full_h / 2, pos.y + full_h / 2
+
+        bl, br, bt, bb = body.dx_left, body.dx_right, body.dy_top, body.dy_bottom
         if pos.rotation == 90:
-            return h / 2, w / 2
-        return w / 2, h / 2
+            bl, br, bt, bb = bt, bb, -br, -bl
+
+        if ref in connector_refs:
+            pad = get_footprint_pad_offsets(comp.footprint)
+            if pad is not None:
+                pl, pr, pt, pb = pad.dx_left, pad.dx_right, pad.dy_top, pad.dy_bottom
+                if pos.rotation == 90:
+                    pl, pr, pt, pb = pt, pb, -pr, -pl
+                return pos.x + pl, pos.x + pr, pos.y + bt, pos.y + bb
+
+        return pos.x + bl, pos.x + br, pos.y + bt, pos.y + bb
 
     lefts, rights, tops, bottoms = [], [], [], []
     for ref, pos in positions.items():
-        hw, hh = half_extent(ref, pos)
-        lefts.append(pos.x - hw)
-        rights.append(pos.x + hw)
-        tops.append(pos.y - hh)
-        bottoms.append(pos.y + hh)
+        l, r, t, b = corners(ref, pos)
+        lefts.append(l); rights.append(r); tops.append(t); bottoms.append(b)
 
     envelope_x = (min(lefts), max(rights))
     envelope_y = (min(tops), max(bottoms))

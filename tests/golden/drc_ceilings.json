@@ -26,6 +26,12 @@
       "warnings": 0,
       "unconnected_pads": 0,
       "notes": "Fully DRC-clean. Maintain as zero-tolerance baseline."
+    },
+    "opamp_buffer_5v": {
+      "errors": 0,
+      "warnings": 0,
+      "unconnected_pads": 0,
+      "notes": "Op-amp unity-gain buffer. Fully DRC-clean since the asymmetric-bbox fix landed. Maintain as zero-tolerance baseline."
     }
   }
 }

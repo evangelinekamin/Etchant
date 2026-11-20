@@ -56,6 +56,21 @@ _PIN_MAPS: dict[str, dict[str, str]] = {
         "GND": "GND",
         "ADJ": "ADJ",
     },
+    # Rail-to-rail single op-amp in SOT-23-5. Our op_amp_buffer generator
+    # feeds raw KiCad pin names in the net spec, so these identity
+    # mappings are really just documentation — but they also let future
+    # generators target the op-amp with generic pin names (V+/V-/IN+/...).
+    "MCP6001-OT": {
+        "V+": "V+",
+        "V-": "V-",
+        "IN+": "+",
+        "IN-": "-",
+        "OUT": "~",
+        # Pass-through for net-spec that uses KiCad names directly.
+        "+": "+",
+        "-": "-",
+        "~": "~",
+    },
     # TPS56x family (common modern buck converters from WEBENCH)
     # Verified against KiCad 9.0.8 symbol libraries
     "TPS563200": {

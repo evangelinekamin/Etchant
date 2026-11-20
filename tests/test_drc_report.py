@@ -123,5 +123,11 @@ class TestDRCCeilingsFile:
         path = Path(__file__).parent / "golden" / "drc_ceilings.json"
         with open(path) as f:
             data = json.load(f)
-        expected = {"buck_12v_to_5v", "ldo_5v_to_3v3", "esp32c3_breakout", "led_5v_20ma"}
+        expected = {
+            "buck_12v_to_5v",
+            "ldo_5v_to_3v3",
+            "esp32c3_breakout",
+            "led_5v_20ma",
+            "opamp_buffer_5v",
+        }
         assert set(data["topologies"].keys()) == expected

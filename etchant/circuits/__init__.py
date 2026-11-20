@@ -15,7 +15,9 @@ from etchant.circuits.generative_ldo import GenerativeLDORegulator
 from etchant.circuits.ldo_regulator import AMS1117LDORegulator
 from etchant.circuits.led_driver import LEDDriverCircuit
 from etchant.circuits.mcu_breakout import ESP32C3Breakout
+from etchant.circuits.op_amp_buffer import OpAmpBufferCircuit
 from etchant.circuits.sensor_breakout import I2CSensorBreakout
+from etchant.circuits.voltage_divider import VoltageDividerCircuit
 
 _REGISTRY: dict[str, type[Any]] = {}
 
@@ -49,3 +51,5 @@ register_generator("sensor_breakout", I2CSensorBreakout)
 register_generator("mcu_breakout", ESP32C3Breakout)
 register_generator("buck_converter_lm2596", LM2596BuckConverter)
 register_generator("ldo_regulator_ams1117", AMS1117LDORegulator)
+register_generator("op_amp_buffer", OpAmpBufferCircuit)
+register_generator("voltage_divider", VoltageDividerCircuit)
