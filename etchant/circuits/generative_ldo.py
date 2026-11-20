@@ -198,42 +198,49 @@ class GenerativeLDORegulator:
             NetSpec(name="VOUT", connections=(("U1", "VO"), ("C2", "1"), ("J2", "1"))),
         ]
 
-        # Add feedback resistors for adjustable LDOs
+        # Add feedback resistors for adjustable LDOs.
         vref = ic_info.get("vref")
         if vref is not None:
             from etchant.core.ee_calculations import _nearest_standard_resistor
 
-            rfbb = 1.0  # 1k bottom resistor for AMS1117-ADJ
-            rfbt = _nearest_standard_resistor(rfbb * (spec.output_voltage / float(vref) - 1))
+            # AMS1117-ADJ is an LM317-style regulator: it holds Vref across the
+            # VOUT->ADJ resistor, so Vout = Vref * (1 + R_adj / R_set), where
+            # R_set sits between VOUT and ADJ and R_adj between ADJ and GND.
+            # R_adj carries the ratio and is the larger resistor (the opposite of
+            # a buck FB divider, where the top resistor is the large one).
+            r_set_k = 1.0
+            r_adj_k = _nearest_standard_resistor(
+                r_set_k * (spec.output_voltage / float(vref) - 1)
+            )
 
             components.extend([
                 ComponentSpec(
                     reference="R1",
                     category=ComponentCategory.RESISTOR,
-                    value=f"{rfbt}k",
+                    value=f"{r_set_k}k",
                     footprint="Resistor_SMD:R_0805_2012Metric",
                     kicad_library="Device",
                     kicad_symbol="R",
-                    description="Feedback top resistor (sets Vout)",
+                    description="Feedback set resistor (VOUT->ADJ, carries Vref)",
                 ),
                 ComponentSpec(
                     reference="R2",
                     category=ComponentCategory.RESISTOR,
-                    value=f"{rfbb}k",
+                    value=f"{r_adj_k}k",
                     footprint="Resistor_SMD:R_0805_2012Metric",
                     kicad_library="Device",
                     kicad_symbol="R",
-                    description="Feedback bottom resistor",
+                    description="Feedback ratio resistor (ADJ->GND, sets Vout)",
                 ),
             ])
             nets.append(
                 NetSpec(name="ADJ", connections=(("U1", "ADJ"), ("R1", "2"), ("R2", "1")))
             )
-            # R1 top connects to VOUT (keep J2 connection too)
+            # R1 (set) spans VOUT->ADJ; keep the existing VOUT loads too.
             nets[2] = NetSpec(
                 name="VOUT", connections=(("U1", "VO"), ("C2", "1"), ("J2", "1"), ("R1", "1"))
             )
-            # R2 bottom connects to GND (keep J1/J2 connections too)
+            # R2 (ratio) spans ADJ->GND; keep the existing GND loads too.
             nets[1] = NetSpec(
                 name="GND",
                 connections=(("J1", "2"), ("C1", "2"), ("U1", "GND"), ("C2", "2"), ("J2", "2"), ("R2", "2")),
