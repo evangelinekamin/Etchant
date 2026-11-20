@@ -141,7 +141,7 @@ def constraint_place(
             else:
                 _place_near_neighbor(comp.reference, placed, fp_dims, net_neighbors, ic_yaml)
 
-    return _to_page_coords(placed)
+    return _to_page_coords(placed, design)
 
 
 def _load_ic_yaml(design: DesignResult) -> dict[str, Any]:
@@ -536,6 +536,7 @@ def _rects_overlap(
 
 def _to_page_coords(
     placed: dict[str, PlacedComponent],
+    design: DesignResult | None = None,
 ) -> tuple[dict[str, tuple[float, float, float]], float, float]:
     if not placed:
         return {}, 35.0, 30.0
@@ -545,10 +546,34 @@ def _to_page_coords(
     # component at min_x actually extends half its width further out — so the
     # board had to grow by margin + half_width on each side. Using outer
     # edges directly lets margin stay tight against the actual copper.
-    lefts = [p.x - p.width / 2 for p in placed.values()]
-    rights = [p.x + p.width / 2 for p in placed.values()]
-    tops = [p.y - p.height / 2 for p in placed.values()]
-    bottoms = [p.y + p.height / 2 for p in placed.values()]
+    #
+    # Connectors contribute their pad bbox (not the full courtyard/housing)
+    # so the board just needs to fit the pads; the plastic shroud can
+    # legitimately overhang the edge for breadboard use.
+    connector_refs: set[str] = set()
+    if design is not None:
+        connector_refs = {
+            c.reference for c in design.components
+            if c.category == ComponentCategory.CONNECTOR
+        }
+
+    def extent_for(ref: str, p: PlacedComponent) -> tuple[float, float]:
+        if ref in connector_refs and design is not None:
+            from etchant.kicad.footprint_query import get_footprint_pad_dimensions
+            comp = next((c for c in design.components if c.reference == ref), None)
+            if comp is not None:
+                info = get_footprint_pad_dimensions(comp.footprint)
+                if info.width_mm > 0 and info.height_mm > 0:
+                    # Project pad dims into the placement's rotation frame
+                    if p.rotation == 90:
+                        return info.height_mm / 2, info.width_mm / 2
+                    return info.width_mm / 2, info.height_mm / 2
+        return p.width / 2, p.height / 2
+
+    lefts = [p.x - extent_for(ref, p)[0] for ref, p in placed.items()]
+    rights = [p.x + extent_for(ref, p)[0] for ref, p in placed.items()]
+    tops = [p.y - extent_for(ref, p)[1] for ref, p in placed.items()]
+    bottoms = [p.y + extent_for(ref, p)[1] for ref, p in placed.items()]
     envelope_x = (min(lefts), max(rights))
     envelope_y = (min(tops), max(bottoms))
     envelope_w = envelope_x[1] - envelope_x[0]

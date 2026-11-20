@@ -441,6 +441,25 @@ def _add_power_connectors(
             max_x = x + w / 2
 
 
+def _get_pad_size(design: DesignResult, ref: str | None) -> tuple[float, float]:
+    """Pad-only bbox — what *must* be on the PCB for the part to be soldered.
+
+    Used for connectors when computing the board envelope, so the
+    plastic housing / courtyard can legitimately overhang the edge.
+    Falls back to full footprint dims when pcbnew isn't available.
+    """
+    if ref is None:
+        return (1.5, 1.5)
+    comp = next((c for c in design.components if c.reference == ref), None)
+    if comp is None:
+        return (1.5, 1.5)
+    from etchant.kicad.footprint_query import get_footprint_pad_dimensions
+    info = get_footprint_pad_dimensions(comp.footprint)
+    if info.width_mm > 0 and info.height_mm > 0:
+        return (info.width_mm, info.height_mm)
+    return _get_footprint_size(design, ref)
+
+
 def _get_footprint_size(design: DesignResult, ref: str | None) -> tuple[float, float]:
     """Return real footprint bounding-box dims (inc. courtyard) or an estimate.
 
@@ -497,18 +516,32 @@ def _finalize(
     half its width further out — on top of the margin. Pin headers on
     breakout boards need to sit AT the physical edge for breadboard use,
     not 8mm inside it.
+
+    Connectors contribute their PAD bbox (not full footprint bbox) to
+    the envelope: only the pads must be on the board, while housing,
+    silkscreen, and plastic bodies can legitimately overhang the edge.
+    Treating a pin header's 3.59mm courtyard as "must fit" pushed the
+    pad ~4mm inside the edge — unusable for breadboard slotting.
     """
     if not positions:
         return positions, 10.0, 10.0
 
-    # Look up each component's footprint dims and project into the same
-    # rotation frame as its Position (swap w/h when rot=90). Fall back to
-    # a small default if design wasn't threaded in (shouldn't happen in
-    # practice — all call sites pass design now).
+    # Connectors contribute pads to the envelope; other parts contribute
+    # full footprint. Fall back to full dims if pcbnew isn't available.
+    connector_refs: set[str] = set()
+    if design is not None:
+        connector_refs = {
+            c.reference for c in design.components
+            if c.category == ComponentCategory.CONNECTOR
+        }
+
     def half_extent(ref: str, pos: Position) -> tuple[float, float]:
         if design is None:
             return 1.5, 1.5
-        w, h = _get_footprint_size(design, ref)
+        if ref in connector_refs:
+            w, h = _get_pad_size(design, ref)
+        else:
+            w, h = _get_footprint_size(design, ref)
         if pos.rotation == 90:
             return h / 2, w / 2
         return w / 2, h / 2

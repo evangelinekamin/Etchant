@@ -307,13 +307,14 @@ class ComponentPlacer:
         zone.SetNetCode(gnd_net.GetNetCode())
         zone.SetZoneName("GND")
 
-        # Zone corners with margin
-        m = _BOARD_MARGIN * 0.5
+        # Ground plane slightly inset from the board edge to respect
+        # JLCPCB's 0.5mm copper-to-edge minimum.
+        inset = 0.5
         corners = [
-            (_PAGE_OFFSET_X - m, _PAGE_OFFSET_Y - m),
-            (_PAGE_OFFSET_X + width_mm + m, _PAGE_OFFSET_Y - m),
-            (_PAGE_OFFSET_X + width_mm + m, _PAGE_OFFSET_Y + height_mm + m),
-            (_PAGE_OFFSET_X - m, _PAGE_OFFSET_Y + height_mm + m),
+            (_PAGE_OFFSET_X + inset, _PAGE_OFFSET_Y + inset),
+            (_PAGE_OFFSET_X + width_mm - inset, _PAGE_OFFSET_Y + inset),
+            (_PAGE_OFFSET_X + width_mm - inset, _PAGE_OFFSET_Y + height_mm - inset),
+            (_PAGE_OFFSET_X + inset, _PAGE_OFFSET_Y + height_mm - inset),
         ]
 
         outline = zone.Outline()
@@ -333,14 +334,19 @@ class ComponentPlacer:
     def _add_board_outline(
         self, board: object, width_mm: float, height_mm: float
     ) -> None:
-        """Add rectangular board edge cuts, centered on component placement area."""
-        ox = _PAGE_OFFSET_X - _BOARD_MARGIN
-        oy = _PAGE_OFFSET_Y - _BOARD_MARGIN
-        w = width_mm + 2 * _BOARD_MARGIN
-        h = height_mm + 2 * _BOARD_MARGIN
+        """Draw Edge.Cuts rectangle at exactly (width_mm × height_mm).
+
+        The placer's _finalize/_to_page_coords already includes a 2mm
+        margin around the component envelope in width_mm, so the outline
+        should match width_mm directly. Earlier versions added a further
+        3mm _BOARD_MARGIN which silently doubled the edge margin and
+        pushed connectors far inside the board.
+        """
+        ox = _PAGE_OFFSET_X
+        oy = _PAGE_OFFSET_Y
         corners = [
-            (ox, oy), (ox + w, oy),
-            (ox + w, oy + h), (ox, oy + h),
+            (ox, oy), (ox + width_mm, oy),
+            (ox + width_mm, oy + height_mm), (ox, oy + height_mm),
         ]
         for i in range(4):
             sx, sy = corners[i]
