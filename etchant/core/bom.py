@@ -12,6 +12,7 @@ from dataclasses import dataclass
 from etchant.core.component_selector import (
     PartClassification,
     lookup_jlcpcb_part,
+    lookup_jlcpcb_part_by_lcsc,
 )
 from etchant.core.models import DesignResult
 
@@ -85,7 +86,13 @@ class BOMGenerator:
         entries: list[BOMEntry] = []
 
         for comp in design.components:
-            part_info = lookup_jlcpcb_part(comp.value)
+            part_info = (
+                lookup_jlcpcb_part_by_lcsc(comp.jlcpcb_part_number)
+                if comp.jlcpcb_part_number
+                else None
+            )
+            if part_info is None:
+                part_info = lookup_jlcpcb_part(comp.value)
             entries.append(
                 BOMEntry(
                     reference=comp.reference,

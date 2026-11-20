@@ -7,6 +7,7 @@ from pathlib import Path
 from etchant.core.component_selector import (
     JLCPCBPartInfo,
     PartClassification,
+    find_jlcpcb_part_candidates,
     find_trace_width,
     lookup_jlcpcb_part,
     set_parts_db,
@@ -49,6 +50,51 @@ class TestLookupJLCPCBPart:
         info = lookup_jlcpcb_part("LM2596S-5", constraints_dir)
         assert info is not None
         assert info.part_number is not None
+
+    def test_known_part_matches_trailing_zero_value(self) -> None:
+        info = lookup_jlcpcb_part("10.0k")
+        assert info is not None
+        assert info.part_number == "C17414"
+        assert info.classification == PartClassification.BASIC
+
+    def test_known_part_matches_unit_case_alias(self) -> None:
+        info = lookup_jlcpcb_part("22.0uf")
+        assert info is not None
+        assert info.part_number == "C45783"
+        assert info.classification == PartClassification.BASIC
+
+    def test_known_mcp6001_op_amp(self) -> None:
+        info = lookup_jlcpcb_part("MCP6001UT-I/OT")
+        assert info is not None
+        assert info.part_number == "C21403"
+        assert info.package == "SOT-23-5"
+        assert info.classification == PartClassification.EXTENDED
+
+    def test_known_esp32_c3_module(self) -> None:
+        info = lookup_jlcpcb_part("ESP32-C3-WROOM-02-N4")
+        assert info is not None
+        assert info.part_number == "C2934560"
+        assert info.subcategory == "WiFi Modules"
+
+    def test_known_0805_green_led(self) -> None:
+        info = lookup_jlcpcb_part("KT-0805G")
+        assert info is not None
+        assert info.part_number == "C2297"
+        assert info.package == "0805"
+        assert info.classification == PartClassification.BASIC
+
+    def test_known_part_candidates_respect_category_and_package(self) -> None:
+        set_parts_db(None)
+        assert find_jlcpcb_part_candidates(
+            "10k",
+            category="Capacitor",
+            package="0805",
+        ) == ()
+        assert find_jlcpcb_part_candidates(
+            "10k",
+            category="Resistor",
+            package="0603",
+        ) == ()
 
     def test_unknown_part_returns_none(self, constraints_dir: Path) -> None:
         info = lookup_jlcpcb_part("NONEXISTENT_PART_XYZ", constraints_dir)
