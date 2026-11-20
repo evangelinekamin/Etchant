@@ -30,6 +30,10 @@ class TestRegistry:
         gen = get_generator("boost_converter")
         assert gen.topology == "boost_converter"
 
+    def test_usb_nvme_bridge_registered(self) -> None:
+        gen = get_generator("usb_nvme_bridge")
+        assert gen.topology == "usb_nvme_bridge"
+
     def test_register_custom_generator(self) -> None:
         class FakeGenerator:
             @property

@@ -8,8 +8,8 @@ Differentiates the generator from the power-supply topologies already
 in the pipeline — signal-path circuit, not DC-DC, shows the generator
 handles analog blocks too.
 
-Uses MCP6001-OT in SOT-23-5. JLCPCB basic part, rail-to-rail single
-op-amp, 1MHz GBW — plenty for audio/sensor buffering.
+Uses MCP6001UT-I/OT in SOT-23-5. It is a rail-to-rail single op-amp
+with 1MHz GBW — plenty for audio/sensor buffering.
 """
 
 from __future__ import annotations
@@ -55,7 +55,7 @@ class OpAmpBufferCircuit:
             ComponentSpec(
                 reference="U1",
                 category=ComponentCategory.IC,
-                value="MCP6001-OT",
+                value="MCP6001UT-I/OT",
                 footprint="Package_TO_SOT_SMD:SOT-23-5",
                 kicad_library="Amplifier_Operational",
                 kicad_symbol="MCP6001-OT",
@@ -66,6 +66,7 @@ class OpAmpBufferCircuit:
                     "output_type": "rail-to-rail",
                     "supply_range_v": "1.8..6.0",
                 },
+                jlcpcb_part_number="C21403",
             ),
             ComponentSpec(
                 reference="C1",

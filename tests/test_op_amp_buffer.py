@@ -30,6 +30,7 @@ class TestBasicGeneration:
         ics = [c for c in design.components if c.category == ComponentCategory.IC]
         assert len(ics) == 1
         assert "MCP6001" in ics[0].value
+        assert ics[0].jlcpcb_part_number == "C21403"
 
     def test_has_bypass_cap(self) -> None:
         design = OpAmpBufferCircuit().generate(_spec())

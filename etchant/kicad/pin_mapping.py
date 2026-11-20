@@ -201,6 +201,35 @@ _PAD_NUMBER_MAPS: dict[str, dict[str, str]] = {
         "VBST": "6",
         "BST": "6",
     },
+    "TSOT-23-6": {
+        "GND": "1",
+        "SW": "2",
+        "VIN": "3",
+        "VFB": "4",
+        "FB": "4",
+        "EN": "5",
+        "VBST": "6",
+        "BST": "6",
+    },
+    # Generic N-MOSFET symbols use pin names G/D/S. Common SOT-23 FETs
+    # such as 2N7002/AO3400A use 1=G, 2=S, 3=D.
+    "SOT-23": {
+        "G": "1",
+        "S": "2",
+        "D": "3",
+    },
+    "SOT-23-3": {
+        "G": "1",
+        "S": "2",
+        "D": "3",
+    },
+    # PowerPAK SO-8L single-FET footprint in KiCad has source pins 1-4 and
+    # drain pad 5. Gate is commonly pin 4 for this package family.
+    "PowerPAK_SO-8L_Single": {
+        "S": "1",
+        "G": "4",
+        "D": "5",
+    },
 }
 
 

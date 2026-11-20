@@ -5,7 +5,7 @@ from __future__ import annotations
 import pytest
 
 from etchant.circuits.mosfet_switch import MosfetSwitchCircuit
-from etchant.core.models import CircuitSpec, ComponentCategory
+from etchant.core.models import CircuitSpec
 
 
 def _spec(vload: float = 5.0, iload: float = 0.05) -> CircuitSpec:
@@ -30,6 +30,21 @@ class TestGeneration:
         q = next(c for c in design.components if c.reference == "Q1")
         assert q.value == "2N7002"
         assert "SOT-23" in q.footprint
+
+    def test_selects_sot23_power_mosfet_for_one_amp_load(self) -> None:
+        design = MosfetSwitchCircuit().generate(_spec(vload=12.0, iload=1.0))
+        q = next(c for c in design.components if c.reference == "Q1")
+        assert q.value == "AO3400A-class"
+        assert q.properties["current_class"] == "power_sot23"
+
+    def test_selects_stocked_powerpak_for_three_amp_load(self) -> None:
+        design = MosfetSwitchCircuit().generate(_spec(vload=12.0, iload=3.0))
+        q = next(c for c in design.components if c.reference == "Q1")
+        connector = next(c for c in design.components if c.reference == "J1")
+        assert q.value == "SQJA36EP-T1_GE3"
+        assert q.jlcpcb_part_number == "C2761031"
+        assert q.properties["current_class"] == "power_pak"
+        assert "TerminalBlock" in connector.footprint
 
     def test_gate_pullup_default_off(self) -> None:
         """R2 ties gate to GND so CTRL must be actively driven high."""
@@ -61,18 +76,21 @@ class TestGeneration:
 
 class TestValidation:
     def test_rejects_high_voltage(self) -> None:
-        with pytest.raises(ValueError, match="Vds rating"):
+        with pytest.raises(ValueError, match="No low-side MOSFET option"):
             MosfetSwitchCircuit().generate(_spec(vload=72))
 
-    def test_rejects_high_current(self) -> None:
-        with pytest.raises(ValueError, match="continuous"):
-            MosfetSwitchCircuit().generate(_spec(iload=0.5))
+    def test_rejects_unsupported_high_current(self) -> None:
+        with pytest.raises(ValueError, match="No low-side MOSFET option"):
+            MosfetSwitchCircuit().generate(_spec(iload=25.0))
 
     def test_accepts_typical_3v3_mcu(self) -> None:
         MosfetSwitchCircuit().generate(_spec(vload=3.3, iload=0.05))
 
     def test_accepts_5v_100ma(self) -> None:
         MosfetSwitchCircuit().generate(_spec(vload=5.0, iload=0.1))
+
+    def test_accepts_12v_3a(self) -> None:
+        MosfetSwitchCircuit().generate(_spec(vload=12.0, iload=3.0))
 
 
 class TestRegistry:
