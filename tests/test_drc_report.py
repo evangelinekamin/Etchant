@@ -130,5 +130,6 @@ class TestDRCCeilingsFile:
             "led_5v_20ma",
             "opamp_buffer_5v",
             "divider_5v_to_2v5",
+            "mosfet_switch_5v_100ma",
         }
         assert set(data["topologies"].keys()) == expected

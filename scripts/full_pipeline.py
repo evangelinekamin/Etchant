@@ -212,6 +212,13 @@ dirs.append(run_design(
     5.0, 2.5, 0.001,
 ))
 
+from etchant.circuits.mosfet_switch import MosfetSwitchCircuit
+dirs.append(run_design(
+    "mosfet_switch_5v_100ma",
+    MosfetSwitchCircuit,
+    5.0, 5.0, 0.1,
+))
+
 # Zip everything
 zip_path = OUTPUT_BASE / "etchant_demo.zip"
 print(f"\n{'='*60}")
