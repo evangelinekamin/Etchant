@@ -105,10 +105,13 @@ def run_design(name, topology_cls, vin, vout, iout):
     else:
         print("  Routing skipped: Freerouting not available")
 
-    # Render PCB as SVG for visual inspection
+    # Render PCB for visual inspection. SVG is the layout-debug view
+    # (multi-layer, flat, fast). The two PNGs are the demo shots:
+    #   *_top.png  — orthographic top view (layout clarity, easy to read)
+    #   *_3d.png   — photorealistic isometric (shows what the fab ships)
+    import subprocess
     svg_path = pcb_path.with_suffix(".svg")
     try:
-        import subprocess
         subprocess.run([
             "kicad-cli", "pcb", "export", "svg",
             "--layers", "F.Cu,B.Cu,Edge.Cuts,F.SilkS",
@@ -118,9 +121,33 @@ def run_design(name, topology_cls, vin, vout, iout):
             str(pcb_path),
         ], capture_output=True, timeout=30)
         if svg_path.exists():
-            print(f"  Render: {svg_path} ({svg_path.stat().st_size} bytes)")
+            print(f"  Render SVG: {svg_path.stat().st_size} bytes")
     except Exception as e:
-        print(f"  Render skipped: {e}")
+        print(f"  SVG render skipped: {e}")
+
+    top_png = pcb_path.parent / f"{pcb_path.stem}_top.png"
+    iso_png = pcb_path.parent / f"{pcb_path.stem}_3d.png"
+    _RENDER_SIZE = ["--width", "1600", "--height", "1200"]
+    for label, out_path, extra_args in [
+        ("top", top_png, ["--side", "top"]),
+        ("3D", iso_png, ["--side", "top", "--rotate", "-30,0,-20", "--perspective"]),
+    ]:
+        try:
+            subprocess.run(
+                [
+                    "kicad-cli", "pcb", "render",
+                    "--quality", "high",
+                    *_RENDER_SIZE,
+                    *extra_args,
+                    "-o", str(out_path),
+                    str(pcb_path),
+                ],
+                capture_output=True, timeout=60,
+            )
+            if out_path.exists():
+                print(f"  Render {label}: {out_path.stat().st_size} bytes")
+        except Exception as e:
+            print(f"  {label} render skipped: {e}")
 
     # Design notes
     for note in design.design_notes:
