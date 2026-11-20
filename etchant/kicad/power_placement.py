@@ -72,6 +72,8 @@ def calculate_power_placement(
         return _place_sensor_breakout(design)
     if "mcu" in topology:
         return _place_mcu_breakout(design)
+    if "divider" in topology:
+        return _place_voltage_divider(design)
     return _place_grid(design)
 
 
@@ -119,11 +121,13 @@ def _place_buck(design: DesignResult) -> tuple[dict[str, Position], float, float
 
     # Feedback resistors: below the tallest component in the row (IC or
     # inductor — whichever sticks further down) so resistor courtyards
-    # don't overlap the inductor's courtyard.
+    # don't overlap the inductor's courtyard. Spacing is set to
+    # body + ~3mm to keep reference silkscreen text ("R1"/"R2") from
+    # overlapping — silk labels extend ~1.5mm on each side of the body.
     res_size = _get_footprint_size(design, resistors[0] if resistors else None)
     row_half_height = max(ic_size[1], ind_size[1]) / 2
     fb_y = cy + row_half_height + res_size[1] / 2 + _MIN_CLEARANCE + 1.0
-    res_spacing = max(4.5, res_size[0] + 1.5)
+    res_spacing = max(6.0, res_size[0] + 3.0)
     for i, ref in enumerate(resistors):
         positions[ref] = Position(cx - 1 + i * res_spacing, fb_y)
 
@@ -136,7 +140,15 @@ def _place_buck(design: DesignResult) -> tuple[dict[str, Position], float, float
 
 
 def _place_ldo(design: DesignResult) -> tuple[dict[str, Position], float, float]:
-    """Place LDO: Cin -> IC -> Cout vertical, feedback to side."""
+    """Place LDO linearly: J1 -> C_in -> U1 -> C_out -> J2.
+
+    The AMS1117 datasheet requires C_in (input bypass) to be as close as
+    physically possible to the VI pin. Putting both caps on the output
+    side of U1 — which the previous version did — forces the input rail
+    from J1 to route around U1's body to reach C_in, adding inductance
+    and a GND return loop. Correct layout is linear: input cap on the
+    input side, output cap on the output side.
+    """
     positions: dict[str, Position] = {}
 
     ic = _find_by_category(design, ComponentCategory.IC)
@@ -149,30 +161,28 @@ def _place_ldo(design: DesignResult) -> tuple[dict[str, Position], float, float]
     ic_size = _get_footprint_size(design, ic)
     cap_size = _get_footprint_size(design, c_in)
 
-    # Vertical spacing: cap adjacent to IC pin
-    cap_to_ic = (cap_size[1] / 2 + ic_size[1] / 2 + _MIN_CLEARANCE)
-    cap_to_ic = _get_constraint_distance(design, c_in, cap_to_ic)
-
-    # Cap offset: place caps adjacent to IC pins using actual dimensions
+    # Horizontal cap-to-IC spacing: half-widths + 0.5mm clearance.
     cap_offset_x = ic_size[0] / 2 + cap_size[0] / 2 + 0.5
 
     cx = _PAGE_X + 10
-    cy = _PAGE_Y + cap_to_ic + 5
+    cy = _PAGE_Y + 10
 
     if c_in:
-        positions[c_in] = Position(cx + cap_offset_x, cy - cap_to_ic, 90)
+        # Input cap on the LEFT of U1 (same side as J1/VIN).
+        positions[c_in] = Position(cx - cap_offset_x, cy, 90)
     if ic:
         positions[ic] = Position(cx, cy)
     if c_out:
-        positions[c_out] = Position(cx + cap_offset_x, cy + cap_to_ic, 90)
+        # Output cap on the RIGHT of U1 (same side as J2/VOUT).
+        positions[c_out] = Position(cx + cap_offset_x, cy, 90)
 
-    # Feedback resistors to the right
+    # Feedback resistors (adjustable variant only): tuck below the IC so
+    # they don't steal the horizontal caps' slots on either side.
     res_size = _get_footprint_size(design, resistors[0] if resistors else None)
+    res_y = cy + ic_size[1] / 2 + res_size[1] / 2 + _MIN_CLEARANCE + 1.0
+    res_spacing = max(4.5, res_size[0] + 1.5)
     for i, ref in enumerate(resistors):
-        positions[ref] = Position(
-            cx + ic_size[0] / 2 + res_size[0] / 2 + 2,
-            cy - 1 + i * max(4.5, res_size[1] + 1.5),
-        )
+        positions[ref] = Position(cx - 1 + i * res_spacing, res_y)
 
     _add_power_connectors(positions, design)
     return _finalize(positions, design)
@@ -373,6 +383,50 @@ def _place_mcu_breakout(
     return _finalize(positions, design)
 
 
+def _place_voltage_divider(
+    design: DesignResult,
+) -> tuple[dict[str, Position], float, float]:
+    """Linear divider layout: J1 (3-pin) on left, R1/R2 chain, C1 bypass on VOUT.
+
+    J1 has 3 vertical pins (VIN top, GND middle, VOUT bottom). Placing
+    passives to the right of J1 at matching Y lets us run short,
+    straight traces: J1.VIN -> R1 -> VOUT -> R2 -> J1.GND.
+    """
+    positions: dict[str, Position] = {}
+    connectors = _find_all_by_category(design, ComponentCategory.CONNECTOR)
+    resistors = _find_all_by_category(design, ComponentCategory.RESISTOR)
+    caps = _find_all_by_category(design, ComponentCategory.CAPACITOR)
+
+    j1 = connectors[0] if connectors else None
+    r1 = resistors[0] if resistors else None
+    r2 = resistors[1] if len(resistors) > 1 else None
+    c1 = caps[0] if caps else None
+
+    # J1 pads are at y = 0, 2.54, 5.08 (pin 1 at origin). Center the pad
+    # cluster on cy by offsetting the placement anchor by -2.54mm (half
+    # the span between pin 1 and pin 3).
+    cx = _PAGE_X + 8
+    cy = _PAGE_Y + 8
+    j1_anchor_y = cy - 2.54
+
+    if j1:
+        positions[j1] = Position(cx, j1_anchor_y, 0)
+
+    # Resistors to the right, stacked vertically to trace the divider:
+    # R1 at VIN y-level, R2 at GND y-level.
+    r_x = cx + 6.0
+    if r1:
+        positions[r1] = Position(r_x, cy - 2.54, 0)  # align with VIN (pin 1)
+    if r2:
+        positions[r2] = Position(r_x, cy + 2.54, 0)  # align with GND (pin 3)
+
+    # Bypass cap to the right of the resistors, on the VOUT y-level (pin 2).
+    if c1:
+        positions[c1] = Position(r_x + 5.0, cy, 0)
+
+    return _finalize(positions, design)
+
+
 def _place_grid(design: DesignResult) -> tuple[dict[str, Position], float, float]:
     """Fallback grid placement."""
     positions: dict[str, Position] = {}
@@ -435,6 +489,25 @@ def _add_power_connectors(
             max_x = x + w / 2
 
 
+def _get_pad_size(design: DesignResult, ref: str | None) -> tuple[float, float]:
+    """Pad-only bbox — what *must* be on the PCB for the part to be soldered.
+
+    Used for connectors when computing the board envelope, so the
+    plastic housing / courtyard can legitimately overhang the edge.
+    Falls back to full footprint dims when pcbnew isn't available.
+    """
+    if ref is None:
+        return (1.5, 1.5)
+    comp = next((c for c in design.components if c.reference == ref), None)
+    if comp is None:
+        return (1.5, 1.5)
+    from etchant.kicad.footprint_query import get_footprint_pad_dimensions
+    info = get_footprint_pad_dimensions(comp.footprint)
+    if info.width_mm > 0 and info.height_mm > 0:
+        return (info.width_mm, info.height_mm)
+    return _get_footprint_size(design, ref)
+
+
 def _get_footprint_size(design: DesignResult, ref: str | None) -> tuple[float, float]:
     """Return real footprint bounding-box dims (inc. courtyard) or an estimate.
 
@@ -491,29 +564,68 @@ def _finalize(
     half its width further out — on top of the margin. Pin headers on
     breakout boards need to sit AT the physical edge for breadboard use,
     not 8mm inside it.
+
+    Connectors contribute their PAD bbox (not full footprint bbox) to
+    the envelope: only the pads must be on the board, while housing,
+    silkscreen, and plastic bodies can legitimately overhang the edge.
+    Treating a pin header's 3.59mm courtyard as "must fit" pushed the
+    pad ~4mm inside the edge — unusable for breadboard slotting.
     """
     if not positions:
         return positions, 10.0, 10.0
 
-    # Look up each component's footprint dims and project into the same
-    # rotation frame as its Position (swap w/h when rot=90). Fall back to
-    # a small default if design wasn't threaded in (shouldn't happen in
-    # practice — all call sites pass design now).
-    def half_extent(ref: str, pos: Position) -> tuple[float, float]:
+    # Connectors contribute pads to the envelope; other parts contribute
+    # full footprint. Fall back to full dims if pcbnew isn't available.
+    connector_refs: set[str] = set()
+    if design is not None:
+        connector_refs = {
+            c.reference for c in design.components
+            if c.category == ComponentCategory.CONNECTOR
+        }
+
+    def corners(ref: str, pos: Position) -> tuple[float, float, float, float]:
+        """Return (left, right, top, bottom) for a placed component.
+
+        Uses signed bbox offsets from pcbnew (handles THT pin headers
+        whose origin is pad 1, not body center). For connectors, pad
+        offsets drive X (pads at board edge) while body offsets drive
+        Y (tall silk body stays on board).
+        """
         if design is None:
-            return 1.5, 1.5
-        w, h = _get_footprint_size(design, ref)
+            return pos.x - 1.5, pos.x + 1.5, pos.y - 1.5, pos.y + 1.5
+
+        from etchant.kicad.footprint_query import (
+            get_footprint_offsets,
+            get_footprint_pad_offsets,
+        )
+        comp = next((c for c in design.components if c.reference == ref), None)
+        if comp is None:
+            full_w, full_h = _get_footprint_size(design, ref)
+            return pos.x - full_w / 2, pos.x + full_w / 2, pos.y - full_h / 2, pos.y + full_h / 2
+
+        body = get_footprint_offsets(comp.footprint)
+        if body is None:
+            full_w, full_h = _get_footprint_size(design, ref)
+            return pos.x - full_w / 2, pos.x + full_w / 2, pos.y - full_h / 2, pos.y + full_h / 2
+
+        bl, br, bt, bb = body.dx_left, body.dx_right, body.dy_top, body.dy_bottom
         if pos.rotation == 90:
-            return h / 2, w / 2
-        return w / 2, h / 2
+            bl, br, bt, bb = bt, bb, -br, -bl
+
+        if ref in connector_refs:
+            pad = get_footprint_pad_offsets(comp.footprint)
+            if pad is not None:
+                pl, pr, pt, pb = pad.dx_left, pad.dx_right, pad.dy_top, pad.dy_bottom
+                if pos.rotation == 90:
+                    pl, pr, pt, pb = pt, pb, -pr, -pl
+                return pos.x + pl, pos.x + pr, pos.y + bt, pos.y + bb
+
+        return pos.x + bl, pos.x + br, pos.y + bt, pos.y + bb
 
     lefts, rights, tops, bottoms = [], [], [], []
     for ref, pos in positions.items():
-        hw, hh = half_extent(ref, pos)
-        lefts.append(pos.x - hw)
-        rights.append(pos.x + hw)
-        tops.append(pos.y - hh)
-        bottoms.append(pos.y + hh)
+        l, r, t, b = corners(ref, pos)
+        lefts.append(l); rights.append(r); tops.append(t); bottoms.append(b)
 
     envelope_x = (min(lefts), max(rights))
     envelope_y = (min(tops), max(bottoms))

@@ -56,6 +56,21 @@ _PIN_MAPS: dict[str, dict[str, str]] = {
         "GND": "GND",
         "ADJ": "ADJ",
     },
+    # Rail-to-rail single op-amp in SOT-23-5. Our op_amp_buffer generator
+    # feeds raw KiCad pin names in the net spec, so these identity
+    # mappings are really just documentation — but they also let future
+    # generators target the op-amp with generic pin names (V+/V-/IN+/...).
+    "MCP6001-OT": {
+        "V+": "V+",
+        "V-": "V-",
+        "IN+": "+",
+        "IN-": "-",
+        "OUT": "~",
+        # Pass-through for net-spec that uses KiCad names directly.
+        "+": "+",
+        "-": "-",
+        "~": "~",
+    },
     # TPS56x family (common modern buck converters from WEBENCH)
     # Verified against KiCad 9.0.8 symbol libraries
     "TPS563200": {
@@ -185,6 +200,35 @@ _PAD_NUMBER_MAPS: dict[str, dict[str, str]] = {
         "EN": "5",
         "VBST": "6",
         "BST": "6",
+    },
+    "TSOT-23-6": {
+        "GND": "1",
+        "SW": "2",
+        "VIN": "3",
+        "VFB": "4",
+        "FB": "4",
+        "EN": "5",
+        "VBST": "6",
+        "BST": "6",
+    },
+    # Generic N-MOSFET symbols use pin names G/D/S. Common SOT-23 FETs
+    # such as 2N7002/AO3400A use 1=G, 2=S, 3=D.
+    "SOT-23": {
+        "G": "1",
+        "S": "2",
+        "D": "3",
+    },
+    "SOT-23-3": {
+        "G": "1",
+        "S": "2",
+        "D": "3",
+    },
+    # PowerPAK SO-8L single-FET footprint in KiCad has source pins 1-4 and
+    # drain pad 5. Gate is commonly pin 4 for this package family.
+    "PowerPAK_SO-8L_Single": {
+        "S": "1",
+        "G": "4",
+        "D": "5",
     },
 }
 

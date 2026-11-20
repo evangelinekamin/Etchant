@@ -141,7 +141,7 @@ def constraint_place(
             else:
                 _place_near_neighbor(comp.reference, placed, fp_dims, net_neighbors, ic_yaml)
 
-    return _to_page_coords(placed)
+    return _to_page_coords(placed, design)
 
 
 def _load_ic_yaml(design: DesignResult) -> dict[str, Any]:
@@ -536,6 +536,7 @@ def _rects_overlap(
 
 def _to_page_coords(
     placed: dict[str, PlacedComponent],
+    design: DesignResult | None = None,
 ) -> tuple[dict[str, tuple[float, float, float]], float, float]:
     if not placed:
         return {}, 35.0, 30.0
@@ -545,10 +546,63 @@ def _to_page_coords(
     # component at min_x actually extends half its width further out — so the
     # board had to grow by margin + half_width on each side. Using outer
     # edges directly lets margin stay tight against the actual copper.
-    lefts = [p.x - p.width / 2 for p in placed.values()]
-    rights = [p.x + p.width / 2 for p in placed.values()]
-    tops = [p.y - p.height / 2 for p in placed.values()]
-    bottoms = [p.y + p.height / 2 for p in placed.values()]
+    #
+    # Connectors contribute their pad bbox (not the full courtyard/housing)
+    # so the board just needs to fit the pads; the plastic shroud can
+    # legitimately overhang the edge for breadboard use.
+    connector_refs: set[str] = set()
+    if design is not None:
+        connector_refs = {
+            c.reference for c in design.components
+            if c.category == ComponentCategory.CONNECTOR
+        }
+
+    def corners_for(ref: str, p: PlacedComponent) -> tuple[float, float, float, float]:
+        """Return (left, right, top, bottom) board-coord edges of a part.
+
+        Uses signed bbox offsets from pcbnew (for asymmetric footprints
+        like THT pin headers whose origin is at pad 1, not the body
+        center). For connectors, pad-only offsets drive the X axis (so
+        pads land at the edge with housing overhang) while full-body
+        offsets drive the Y axis (so tall silk bodies don't clip off).
+        """
+        if design is None:
+            return p.x - p.width / 2, p.x + p.width / 2, p.y - p.height / 2, p.y + p.height / 2
+
+        from etchant.kicad.footprint_query import (
+            get_footprint_offsets,
+            get_footprint_pad_offsets,
+        )
+        comp = next((c for c in design.components if c.reference == ref), None)
+        if comp is None:
+            return p.x - p.width / 2, p.x + p.width / 2, p.y - p.height / 2, p.y + p.height / 2
+
+        body = get_footprint_offsets(comp.footprint)
+        if body is None:
+            return p.x - p.width / 2, p.x + p.width / 2, p.y - p.height / 2, p.y + p.height / 2
+
+        # Apply rotation to the local offsets. Only 0 and 90 are used by
+        # the placer — handle both explicitly.
+        bl, br, bt, bb = body.dx_left, body.dx_right, body.dy_top, body.dy_bottom
+        if p.rotation == 90:
+            # 90° CW: local +x → world -y, local +y → world +x
+            bl, br, bt, bb = bt, bb, -br, -bl
+
+        if ref in connector_refs:
+            pad = get_footprint_pad_offsets(comp.footprint)
+            if pad is not None:
+                pl, pr, pt, pb = pad.dx_left, pad.dx_right, pad.dy_top, pad.dy_bottom
+                if p.rotation == 90:
+                    pl, pr, pt, pb = pt, pb, -pr, -pl
+                # Use pad offsets in X, body offsets in Y.
+                return p.x + pl, p.x + pr, p.y + bt, p.y + bb
+
+        return p.x + bl, p.x + br, p.y + bt, p.y + bb
+
+    lefts, rights, tops, bottoms = [], [], [], []
+    for ref, p in placed.items():
+        l, r, t, b = corners_for(ref, p)
+        lefts.append(l); rights.append(r); tops.append(t); bottoms.append(b)
     envelope_x = (min(lefts), max(rights))
     envelope_y = (min(tops), max(bottoms))
     envelope_w = envelope_x[1] - envelope_x[0]

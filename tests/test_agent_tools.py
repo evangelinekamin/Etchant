@@ -17,6 +17,9 @@ class TestToolDefinitions:
     def test_generate_circuit_tool_exists(self) -> None:
         names = {t.name for t in TOOLS}
         assert "generate_circuit" in names
+        assert "generate_pcb_project" in names
+        assert "optimize_jlcpcb_assembly" in names
+        assert "validate_jlcpcb_assembly" in names
         assert "validate_design" in names
         assert "estimate_cost" in names
 

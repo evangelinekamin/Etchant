@@ -1,0 +1,156 @@
+version: 1
+description: >
+  Seed PCB design gauntlet for Etchant. These are not all expected to become
+  fabrication-ready boards today; the point is to expose capability gaps with
+  repeatable prompts and artifacts.
+cases:
+  - id: usb_c_5v_3a_power_input
+    title: USB-C 5V 3A power input board
+    prompt: >
+      Make a tiny USB-C sink board that negotiates basic 5V power and exposes
+      a protected 5V rail for downstream projects.
+    expected_maturity: fabrication_candidate
+    topology: usb_c_sink_protection
+    advisor_expected: usb_c_sink_protection
+    priority: usb_power
+    spec:
+      input_voltage: 5.0
+      output_voltage: 5.0
+      output_current: 3.0
+    tags: [usb-c, power, protection]
+    notes:
+      - Uses CC Rd resistors, VBUS TVS, and a TPS259571 eFuse.
+      - Power-only sink; no USB-PD, USB data, or advertised-current detection yet.
+
+  - id: buck_12v_to_5v_2a
+    title: 12V to 5V 2A buck module
+    prompt: >
+      I need a small 12V input to 5V 2A regulator board for powering a single
+      board computer from a battery pack.
+    expected_maturity: fabrication_candidate
+    topology: buck_converter
+    advisor_expected: buck_converter
+    priority: efficiency
+    spec:
+      input_voltage: 12.0
+      output_voltage: 5.0
+      output_current: 2.0
+    tags: [power, buck, jlcpcb]
+
+  - id: lipo_charger_protection
+    title: Single-cell LiPo charger with protection
+    prompt: >
+      Make a USB-C rechargeable single-cell LiPo charger board with battery
+      protection and a 3.3V output rail for a sensor.
+    expected_maturity: research_required
+    topology:
+    spec:
+      input_voltage: 5.0
+      output_voltage: 3.3
+      output_current: 0.5
+    tags: [battery, charger, protection]
+    notes:
+      - Missing charger/protection topology.
+      - Needs cell safety, charge current configuration, thermistor policy, and load sharing.
+
+  - id: esp32_sensor_board
+    title: ESP32-C3 environmental sensor board
+    prompt: >
+      Design a compact ESP32-C3 board with 5V USB input, 3.3V regulation, I2C
+      sensor header, reset/boot buttons, and programming support.
+    expected_maturity: fabrication_candidate
+    topology: mcu_breakout
+    spec:
+      input_voltage: 5.0
+      output_voltage: 3.3
+      output_current: 0.5
+    tags: [mcu, esp32, sensor]
+
+  - id: led_strip_mosfet_driver
+    title: Logic-level LED strip MOSFET driver
+    prompt: >
+      Make a board that lets a 3.3V microcontroller PWM a 12V LED strip with
+      screw terminals and a flyback-safe output stage.
+    expected_maturity: fabrication_candidate
+    topology: mosfet_switch
+    spec:
+      input_voltage: 12.0
+      output_voltage: 12.0
+      output_current: 3.0
+    tags: [mosfet, led, driver]
+
+  - id: small_motor_driver
+    title: Small brushed DC motor driver
+    prompt: >
+      I want a small reversible brushed DC motor driver board for a 6V motor at
+      about 1A, controlled by a microcontroller.
+    expected_maturity: research_required
+    topology: brushed_motor_driver
+    spec:
+      input_voltage: 6.0
+      output_voltage: 6.0
+      output_current: 1.0
+    tags: [motor, h-bridge]
+    notes:
+      - Missing H-bridge/motor-driver topology.
+      - Needs stall current, thermal limits, flyback handling, and control interface choices.
+
+  - id: op_amp_sensor_buffer
+    title: Rail-to-rail op-amp sensor buffer
+    prompt: >
+      Build a simple 3.3V op-amp buffer board for a high-impedance analog
+      sensor before feeding an ADC.
+    expected_maturity: fabrication_candidate
+    topology: op_amp_buffer
+    spec:
+      input_voltage: 3.3
+      output_voltage: 3.3
+      output_current: 0.02
+    tags: [analog, op-amp, sensor]
+
+  - id: voltage_current_monitor
+    title: Voltage/current monitor front-end
+    prompt: >
+      Make a board that measures a 12V rail current and voltage and outputs
+      ADC-safe sense signals for a microcontroller.
+    expected_maturity: research_required
+    topology: voltage_divider
+    spec:
+      input_voltage: 12.0
+      output_voltage: 3.0
+      output_current: 0.001
+    tags: [measurement, adc, current-sense]
+    notes:
+      - Voltage divider covers only voltage measurement.
+      - Needs current-sense amplifier or shunt topology.
+
+  - id: usb_m2_2230_nvme_bridge
+    title: USB-C to M.2 2230 NVMe bridge
+    prompt: >
+      Make a reliable flash-drive-sized USB-C board that accepts a Steam Deck
+      sized M.2 2230 NVMe SSD.
+    expected_maturity: architecture_only
+    topology: usb_nvme_bridge
+    spec:
+      input_voltage: 5.0
+      output_voltage: 3.3
+      output_current: 2.0
+    tags: [usb3, nvme, high-speed, stretch]
+    notes:
+      - Architecture-only until bridge datasheet, symbols, footprints, and reference layout exist.
+
+  - id: dual_nvme_raid1_usb_enclosure
+    title: Dual M.2 RAID1 USB enclosure
+    prompt: >
+      Make a dual M.2 NVMe USB enclosure that mirrors data between drives for
+      sensitive documents.
+    expected_maturity: reject_or_escalate
+    topology:
+    spec:
+      input_voltage: 5.0
+      output_voltage: 3.3
+      output_current: 4.0
+    tags: [usb3, nvme, raid, high-speed]
+    notes:
+      - Outside current topology scope.
+      - Needs a RAID-capable bridge controller, external power/thermal design, and vendor reference design.

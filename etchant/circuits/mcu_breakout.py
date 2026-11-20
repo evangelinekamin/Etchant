@@ -52,11 +52,17 @@ class ESP32C3Breakout:
             ComponentSpec(
                 reference="U1",
                 category=ComponentCategory.IC,
-                value="ESP32-C3-WROOM-02",
+                value="ESP32-C3-WROOM-02-N4",
                 footprint="RF_Module:ESP32-C3-WROOM-02",
                 kicad_library="RF_Module",
                 kicad_symbol="ESP32-C3-WROOM-02",
-                description="ESP32-C3 WiFi+BLE module with antenna",
+                description="ESP32-C3 WiFi+BLE module, 4MB flash, PCB antenna",
+                properties={
+                    "flash": "4MB",
+                    "antenna": "pcb",
+                    "assembly_note": "keep antenna courtyard copper-free",
+                },
+                jlcpcb_part_number="C2934560",
             ),
             # 3.3V LDO
             ComponentSpec(
@@ -82,10 +88,11 @@ class ESP32C3Breakout:
                 reference="C2",
                 category=ComponentCategory.CAPACITOR,
                 value="100nF",
-                footprint="Capacitor_SMD:C_0402_1005Metric",
+                footprint="Capacitor_SMD:C_0603_1608Metric",
                 kicad_library="Device",
                 kicad_symbol="C",
                 description="3V3 HF decoupling (close to MCU)",
+                jlcpcb_part_number="C14663",
             ),
             # LDO input cap
             ComponentSpec(
@@ -102,29 +109,33 @@ class ESP32C3Breakout:
                 reference="R1",
                 category=ComponentCategory.RESISTOR,
                 value="10k",
-                footprint="Resistor_SMD:R_0402_1005Metric",
+                footprint="Resistor_SMD:R_0603_1608Metric",
                 kicad_library="Device",
                 kicad_symbol="R",
                 description="EN pull-up resistor",
+                jlcpcb_part_number="C25804",
             ),
             # Status LED + resistor
             ComponentSpec(
                 reference="D1",
                 category=ComponentCategory.DIODE,
-                value="LED",
+                value="KT-0805G",
                 footprint="LED_SMD:LED_0805_2012Metric",
                 kicad_library="Device",
                 kicad_symbol="LED",
-                description="Status LED on IO2",
+                description="Green status LED on IO2",
+                properties={"color": "green", "forward_current_ma": "5"},
+                jlcpcb_part_number="C2297",
             ),
             ComponentSpec(
                 reference="R2",
                 category=ComponentCategory.RESISTOR,
                 value="1k",
-                footprint="Resistor_SMD:R_0402_1005Metric",
+                footprint="Resistor_SMD:R_0603_1608Metric",
                 kicad_library="Device",
                 kicad_symbol="R",
                 description="LED current limiting resistor",
+                jlcpcb_part_number="C21190",
             ),
             # Programming/power header
             ComponentSpec(
@@ -138,6 +149,7 @@ class ESP32C3Breakout:
                 kicad_library="Connector_Generic",
                 kicad_symbol="Conn_01x06",
                 description="Header: 5V GND TX RX IO0 EN",
+                do_not_populate=True,
             ),
             # GPIO breakout header
             ComponentSpec(
@@ -151,6 +163,7 @@ class ESP32C3Breakout:
                 kicad_library="Connector_Generic",
                 kicad_symbol="Conn_01x08",
                 description="GPIO breakout header",
+                do_not_populate=True,
             ),
         )
 

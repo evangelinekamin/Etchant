@@ -62,7 +62,7 @@ class ComponentPlacer:
         from etchant.kicad.power_placement import calculate_power_placement
 
         topology = design.spec.topology
-        known_topologies = {"buck", "ldo", "boost", "led"}
+        known_topologies = {"buck", "ldo", "boost", "led", "divider"}
         use_topology_specific = any(t in topology for t in known_topologies)
 
         if use_topology_specific:
@@ -121,10 +121,17 @@ class ComponentPlacer:
         # Fill zones and patch JLCPCB rules via a reload cycle. Doing the
         # fill on the in-memory board crashes pcbnew when called before
         # the initial save — safer to load the saved file fresh.
-        from etchant.kicad.design_rules import apply_jlcpcb_rules, fill_zones_on_disk
+        from etchant.kicad.design_rules import (
+            apply_jlcpcb_rules,
+            fill_zones_on_disk,
+            power_trace_width_mm,
+        )
         fill_zones_on_disk(output_path)
         pro_path = output_path.with_suffix(".kicad_pro")
-        apply_jlcpcb_rules(pro_path)
+        apply_jlcpcb_rules(
+            pro_path,
+            power_track_width_mm=power_trace_width_mm(design.spec.output_current),
+        )
 
         return output_path
 
@@ -307,13 +314,14 @@ class ComponentPlacer:
         zone.SetNetCode(gnd_net.GetNetCode())
         zone.SetZoneName("GND")
 
-        # Zone corners with margin
-        m = _BOARD_MARGIN * 0.5
+        # Ground plane slightly inset from the board edge to respect
+        # JLCPCB's 0.5mm copper-to-edge minimum.
+        inset = 0.5
         corners = [
-            (_PAGE_OFFSET_X - m, _PAGE_OFFSET_Y - m),
-            (_PAGE_OFFSET_X + width_mm + m, _PAGE_OFFSET_Y - m),
-            (_PAGE_OFFSET_X + width_mm + m, _PAGE_OFFSET_Y + height_mm + m),
-            (_PAGE_OFFSET_X - m, _PAGE_OFFSET_Y + height_mm + m),
+            (_PAGE_OFFSET_X + inset, _PAGE_OFFSET_Y + inset),
+            (_PAGE_OFFSET_X + width_mm - inset, _PAGE_OFFSET_Y + inset),
+            (_PAGE_OFFSET_X + width_mm - inset, _PAGE_OFFSET_Y + height_mm - inset),
+            (_PAGE_OFFSET_X + inset, _PAGE_OFFSET_Y + height_mm - inset),
         ]
 
         outline = zone.Outline()
@@ -333,14 +341,19 @@ class ComponentPlacer:
     def _add_board_outline(
         self, board: object, width_mm: float, height_mm: float
     ) -> None:
-        """Add rectangular board edge cuts, centered on component placement area."""
-        ox = _PAGE_OFFSET_X - _BOARD_MARGIN
-        oy = _PAGE_OFFSET_Y - _BOARD_MARGIN
-        w = width_mm + 2 * _BOARD_MARGIN
-        h = height_mm + 2 * _BOARD_MARGIN
+        """Draw Edge.Cuts rectangle at exactly (width_mm × height_mm).
+
+        The placer's _finalize/_to_page_coords already includes a 2mm
+        margin around the component envelope in width_mm, so the outline
+        should match width_mm directly. Earlier versions added a further
+        3mm _BOARD_MARGIN which silently doubled the edge margin and
+        pushed connectors far inside the board.
+        """
+        ox = _PAGE_OFFSET_X
+        oy = _PAGE_OFFSET_Y
         corners = [
-            (ox, oy), (ox + w, oy),
-            (ox + w, oy + h), (ox, oy + h),
+            (ox, oy), (ox + width_mm, oy),
+            (ox + width_mm, oy + height_mm), (ox, oy + height_mm),
         ]
         for i in range(4):
             sx, sy = corners[i]

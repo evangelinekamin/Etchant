@@ -57,6 +57,18 @@ class TestStepUp:
         assert "boost" in rec.reason.lower()
 
 
+class TestSameVoltage:
+    def test_same_voltage_recommends_mosfet_switch(self) -> None:
+        rec = recommend_topology(12.0, 12.0, 3.0)
+        assert rec.topology == "mosfet_switch"
+        assert rec.confidence > 0.0
+
+    def test_usb_power_priority_recommends_usb_c_sink_protection(self) -> None:
+        rec = recommend_topology(5.0, 5.0, 3.0, priority="usb_power")
+        assert rec.topology == "usb_c_sink_protection"
+        assert "eFuse" in rec.reason
+
+
 class TestRecommendationStructure:
     def test_has_tradeoffs(self) -> None:
         rec = recommend_topology(12.0, 5.0, 2.0)

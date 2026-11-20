@@ -26,6 +26,24 @@
       "warnings": 0,
       "unconnected_pads": 0,
       "notes": "Fully DRC-clean. Maintain as zero-tolerance baseline."
+    },
+    "opamp_buffer_5v": {
+      "errors": 0,
+      "warnings": 0,
+      "unconnected_pads": 0,
+      "notes": "Op-amp unity-gain buffer. Fully DRC-clean since the asymmetric-bbox fix landed. Maintain as zero-tolerance baseline."
+    },
+    "divider_5v_to_2v5": {
+      "errors": 0,
+      "warnings": 0,
+      "unconnected_pads": 0,
+      "notes": "Voltage divider 5V -> 2.5V. Fully DRC-clean with dedicated _place_voltage_divider layout."
+    },
+    "mosfet_switch_5v_100ma": {
+      "errors": 0,
+      "warnings": 0,
+      "unconnected_pads": 0,
+      "notes": "Low-side N-channel MOSFET switch (2N7002). Placed by constraint_placer with Q1 as the primary component."
     }
   }
 }

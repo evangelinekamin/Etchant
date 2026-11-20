@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 from unittest.mock import patch
 
@@ -18,7 +19,13 @@ def generator() -> GenerativeBuckConverter:
 
 @pytest.fixture
 def webench_generator() -> GenerativeBuckConverter:
-    webench_dir = Path("/home/evangeline/Projects/etchant-data/data/webench")
+    repo_root = Path(__file__).resolve().parents[1]
+    webench_dir = Path(
+        os.environ.get(
+            "ETCHANT_WEBENCH_DIR",
+            str(repo_root.parent / "etchant-data" / "data" / "webench"),
+        )
+    )
     if webench_dir.exists():
         return GenerativeBuckConverter(webench_data_dir=webench_dir)
     return GenerativeBuckConverter()

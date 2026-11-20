@@ -1,9 +1,10 @@
 """Test PCB placement end-to-end inside distrobox."""
 
 import sys
-sys.path.insert(0, "/home/evangeline/Projects/etchant")
-
 from pathlib import Path
+
+REPO_ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(REPO_ROOT))
 
 from etchant.circuits.ldo_regulator import AMS1117LDORegulator
 from etchant.core.models import CircuitSpec

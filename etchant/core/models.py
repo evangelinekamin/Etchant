@@ -35,6 +35,7 @@ class ComponentSpec:
     description: str
     properties: Mapping[str, str] = field(default_factory=dict)
     jlcpcb_part_number: str | None = None
+    do_not_populate: bool = False
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "properties", MappingProxyType(dict(self.properties)))

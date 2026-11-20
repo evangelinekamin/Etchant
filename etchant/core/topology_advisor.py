@@ -34,11 +34,54 @@ def recommend_topology(
         input_voltage: Input voltage in volts
         output_voltage: Output voltage in volts
         output_current: Output current in amps
-        priority: One of "efficiency", "noise", "cost", "size", "balanced"
+        priority: One of "efficiency", "noise", "cost", "size",
+            "usb_power", "protection", or "balanced"
     """
     is_step_down = output_voltage < input_voltage
+    is_same_voltage = output_voltage == input_voltage
+    normalized_priority = priority.lower().replace("-", "_")
     voltage_diff = abs(input_voltage - output_voltage)
     power_dissipation = voltage_diff * output_current
+
+    if (
+        is_same_voltage
+        and input_voltage == 5.0
+        and output_current <= 3.0
+        and normalized_priority in {"usb_power", "usb_c", "usb", "protection"}
+    ):
+        return TopologyRecommendation(
+            topology="usb_c_sink_protection",
+            confidence=0.85,
+            reason=(
+                "5V in/out with a USB/protection priority is a power-path input, "
+                "not a regulator; use the USB-C sink protection topology with "
+                "CC Rd resistors, VBUS TVS, and an eFuse"
+            ),
+            tradeoffs=(
+                "No USB-PD negotiation or advertised-current detection",
+                "3A operation still depends on the source, cable, connector, copper, and thermals",
+                "Uses at least one Extended JLCPCB part for the eFuse/TVS",
+            ),
+            alternatives=("mosfet_switch", "dedicated_load_switch"),
+        )
+
+    # Same-voltage case: this is not a regulator, it is usually load switching
+    # or protection. Route to the MOSFET switch topology as the current generic
+    # load-control primitive.
+    if is_same_voltage:
+        return TopologyRecommendation(
+            topology="mosfet_switch",
+            confidence=0.65,
+            reason=(
+                f"Input and output are both {input_voltage}V, so no regulation "
+                "is required; use a load-switch/MOSFET control topology"
+            ),
+            tradeoffs=(
+                "Current topology is low-side switching, not high-side power-path control",
+                "High-current loads need MOSFET thermal review and suitable connectors",
+            ),
+            alternatives=("dedicated_load_switch", "high_side_switch"),
+        )
 
     # Step-up case — we don't support this yet
     if not is_step_down:

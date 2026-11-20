@@ -1,176 +1,112 @@
-"""Run the full Etchant pipeline: spec -> design -> netlist -> PCB -> zip."""
+"""Run Etchant's demo designs through the full KiCad artifact pipeline."""
 
-import os
-import shutil
+from __future__ import annotations
+
 import sys
 import zipfile
 from pathlib import Path
 
-sys.path.insert(0, "/home/evangeline/Projects/etchant")
+REPO_ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(REPO_ROOT))
 
-os.environ["KICAD_SYMBOL_DIR"] = "/usr/share/kicad/symbols"
-os.environ["KICAD8_SYMBOL_DIR"] = "/usr/share/kicad/symbols"
-os.environ["KICAD9_SYMBOL_DIR"] = "/usr/share/kicad/symbols"
-
-from etchant.circuits.generative_buck import GenerativeBuckConverter
-from etchant.circuits.ldo_regulator import AMS1117LDORegulator
-from etchant.core.bom import BOMGenerator, CostBreakdown
-from etchant.core.constraint_engine import ConstraintEngine, Severity
-from etchant.core.models import CircuitSpec
-from etchant.core.serialization import save_design
-from etchant.kicad.design_export import DesignExporter
-from etchant.kicad.placement import ComponentPlacer
-
-# Patch SKiDL before import
-exec(open("/home/evangeline/Projects/etchant/scripts/patch_skidl.py").read())
-
-import skidl
-skidl.lib_search_paths[skidl.KICAD].append("/usr/share/kicad/symbols")
-
-from etchant.kicad.netlist_builder import NetlistBuilder
-from etchant.kicad.project_writer import ProjectWriter
-
-OUTPUT_BASE = Path("/home/evangeline/Projects/etchant/output/demo")
+from etchant.kicad.pipeline import (  # noqa: E402
+    DEFAULT_OUTPUT_DIR,
+    build_spec,
+    configure_kicad_environment,
+    generate_pcb_artifacts,
+)
 
 
-def run_design(name, topology_cls, vin, vout, iout):
-    print(f"\n{'='*60}")
+def _patch_skidl() -> None:
+    patch_script = REPO_ROOT / "scripts" / "patch_skidl.py"
+    exec(patch_script.read_text(), {"__file__": str(patch_script)})
+
+
+def _run_design(
+    name: str,
+    topology: str,
+    vin: float,
+    vout: float,
+    iout: float,
+) -> Path:
+    print(f"\n{'=' * 60}")
     print(f"  {name}: {vin}V -> {vout}V @ {iout}A")
-    print(f"{'='*60}")
+    print(f"{'=' * 60}")
 
-    spec = CircuitSpec(
+    spec = build_spec(
         name=name,
-        topology=topology_cls().topology,
+        topology=topology,
         input_voltage=vin,
         output_voltage=vout,
         output_current=iout,
-        description=f"{name}: {vin}V to {vout}V @ {iout}A",
     )
+    result = generate_pcb_artifacts(
+        spec,
+        output_dir=DEFAULT_OUTPUT_DIR / name,
+        route=True,
+        render=True,
+        export_fab=True,
+        run_drc=True,
+    )
+    paths = result.as_dict()["paths"]
 
-    out_dir = OUTPUT_BASE / name
-
-    # Generate design
-    gen = topology_cls()
-    design = gen.generate(spec)
-    print(f"  Components: {len(design.components)}")
-    print(f"  Nets: {len(design.nets)}")
-
-    # Validate
-    constraints_dir = Path("/home/evangeline/Projects/etchant/constraints")
-    engine = ConstraintEngine(constraints_dir)
-    violations = engine.validate_design(design)
-    errors = [v for v in violations if v.severity == Severity.ERROR]
-    print(f"  Validation: {'PASS' if not errors else f'{len(errors)} errors'}")
-
-    # BOM
-    bom = BOMGenerator().generate(design)
-    cost = CostBreakdown.from_bom(bom)
-    print(f"  BOM: {cost.basic_parts_count} basic, {cost.extended_parts_count} extended")
-    print(f"  Setup fee: ${cost.total_setup_fee_usd:.2f}")
-
-    # Save design JSON
-    save_design(design, out_dir / f"{name}.json")
-    print(f"  Design JSON: {out_dir / f'{name}.json'}")
-
-    # Export BOM CSV
-    exporter = DesignExporter(out_dir)
-    csv_path = exporter.export_bom_csv(design)
-    print(f"  BOM CSV: {csv_path}")
-
-    # Generate netlist
-    builder = NetlistBuilder(out_dir)
-    netlist_path = builder.build(design)
-    print(f"  Netlist: {netlist_path} ({netlist_path.stat().st_size} bytes)")
-
-    # Create KiCad project
-    writer = ProjectWriter(out_dir)
-    pro_path = writer.write_project(design, netlist_path)
-    print(f"  Project: {pro_path}")
-
-    # Place components on PCB
-    placer = ComponentPlacer()
-    pcb_path = out_dir / name / f"{name}.kicad_pcb"
-    placer.create_board(design, pcb_path)
-    print(f"  PCB: {pcb_path} ({pcb_path.stat().st_size} bytes)")
-
-    # Autoroute with Freerouting
-    from etchant.kicad.router import FreeroutingRouter, check_freerouting_available
-    if check_freerouting_available():
-        router = FreeroutingRouter(max_passes=20)
-        try:
-            router.route_board(pcb_path)
-            print(f"  Routed: {pcb_path.stat().st_size} bytes (Freerouting)")
-        except Exception as e:
-            print(f"  Routing failed: {e}")
-    else:
-        print("  Routing skipped: Freerouting not available")
-
-    # Render PCB as SVG for visual inspection
-    svg_path = pcb_path.with_suffix(".svg")
-    try:
-        import subprocess
-        subprocess.run([
-            "kicad-cli", "pcb", "export", "svg",
-            "--layers", "F.Cu,B.Cu,Edge.Cuts,F.SilkS",
-            "--fit-page-to-board",
-            "--exclude-drawing-sheet",
-            "-o", str(svg_path),
-            str(pcb_path),
-        ], capture_output=True, timeout=30)
-        if svg_path.exists():
-            print(f"  Render: {svg_path} ({svg_path.stat().st_size} bytes)")
-    except Exception as e:
-        print(f"  Render skipped: {e}")
-
-    # Design notes
-    for note in design.design_notes:
+    print(f"  Components: {result.component_count}")
+    print(f"  Nets: {result.net_count}")
+    print(f"  Validation: {'PASS' if result.validation_errors == 0 else result.validation_errors}")
+    print(f"  Setup fee: ${result.setup_fee_usd:.2f}")
+    print(f"  Design JSON: {paths['design_json']}")
+    print(f"  BOM CSV: {paths['bom_csv']}")
+    print(f"  Netlist: {paths['netlist']}")
+    print(f"  Project: {paths['project']}")
+    print(f"  PCB: {paths['pcb']}")
+    print(f"  Routed: {result.routed}")
+    print(f"  Render top: {paths['top_png']}")
+    print(f"  Render 3D: {paths['render_3d_png']}")
+    print(f"  Fab zip: {paths['fab_zip']}")
+    if result.drc:
+        print(
+            "  DRC: "
+            f"errors={result.drc['errors']} "
+            f"warnings={result.drc['warnings']} "
+            f"unconnected={result.drc['unconnected_pads']}"
+        )
+    for note in result.notes:
         print(f"  Note: {note}")
 
-    return out_dir
+    return DEFAULT_OUTPUT_DIR / name
 
 
-# Run demo designs
-dirs = []
+def main() -> int:
+    configure_kicad_environment()
+    _patch_skidl()
 
-dirs.append(run_design(
-    "ldo_5v_to_3v3",
-    AMS1117LDORegulator,
-    5.0, 3.3, 0.5,
-))
+    demo_specs = (
+        ("ldo_5v_to_3v3", "ldo_regulator_ams1117", 5.0, 3.3, 0.5),
+        ("buck_12v_to_5v", "buck_converter", 12.0, 5.0, 2.0),
+        ("led_5v_20ma", "led_driver", 5.0, 2.0, 0.02),
+        ("esp32c3_breakout", "mcu_breakout", 5.0, 3.3, 0.5),
+        ("opamp_buffer_5v", "op_amp_buffer", 5.0, 5.0, 0.022),
+        ("divider_5v_to_2v5", "voltage_divider", 5.0, 2.5, 0.001),
+        ("mosfet_switch_5v_100ma", "mosfet_switch", 5.0, 5.0, 0.1),
+    )
 
-dirs.append(run_design(
-    "buck_12v_to_5v",
-    GenerativeBuckConverter,
-    12.0, 5.0, 2.0,
-))
+    dirs = [_run_design(*spec) for spec in demo_specs]
 
-from etchant.circuits.led_driver import LEDDriverCircuit
-dirs.append(run_design(
-    "led_5v_20ma",
-    LEDDriverCircuit,
-    5.0, 2.0, 0.02,
-))
+    zip_path = DEFAULT_OUTPUT_DIR / "etchant_demo.zip"
+    print(f"\n{'=' * 60}")
+    print(f"  Creating zip: {zip_path}")
+    print(f"{'=' * 60}")
 
-from etchant.circuits.mcu_breakout import ESP32C3Breakout
-dirs.append(run_design(
-    "esp32c3_breakout",
-    ESP32C3Breakout,
-    5.0, 3.3, 0.5,
-))
+    with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zf:
+        for directory in dirs:
+            for filepath in directory.rglob("*"):
+                if filepath.is_file():
+                    zf.write(filepath, filepath.relative_to(DEFAULT_OUTPUT_DIR))
 
-# Zip everything
-zip_path = OUTPUT_BASE / "etchant_demo.zip"
-print(f"\n{'='*60}")
-print(f"  Creating zip: {zip_path}")
-print(f"{'='*60}")
+    print(f"  Zip size: {zip_path.stat().st_size} bytes")
+    print(f"\n  Done. Open {zip_path} in KiCad or upload a *_gerbers.zip to your fab.")
+    return 0
 
-with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zf:
-    for d in dirs:
-        for root, _, files in os.walk(d):
-            for f in files:
-                filepath = Path(root) / f
-                arcname = filepath.relative_to(OUTPUT_BASE)
-                zf.write(filepath, arcname)
 
-print(f"  Zip size: {zip_path.stat().st_size} bytes")
-print(f"\n  Done! Copy {zip_path} to your main machine and open in KiCad.")
+if __name__ == "__main__":
+    raise SystemExit(main())

@@ -46,6 +46,10 @@ class JLCPCBPart:
             classification=self.classification,
             description=self.description,
             stock=self.stock,
+            mfr_part=self.mfr_part,
+            package=self.package,
+            category=self.category,
+            subcategory=self.subcategory,
         )
 
 
