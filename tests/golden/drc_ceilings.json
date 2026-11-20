@@ -32,6 +32,12 @@
       "warnings": 0,
       "unconnected_pads": 0,
       "notes": "Op-amp unity-gain buffer. Fully DRC-clean since the asymmetric-bbox fix landed. Maintain as zero-tolerance baseline."
+    },
+    "divider_5v_to_2v5": {
+      "errors": 0,
+      "warnings": 0,
+      "unconnected_pads": 0,
+      "notes": "Voltage divider 5V -> 2.5V. Fully DRC-clean with dedicated _place_voltage_divider layout."
     }
   }
 }

@@ -72,6 +72,8 @@ def calculate_power_placement(
         return _place_sensor_breakout(design)
     if "mcu" in topology:
         return _place_mcu_breakout(design)
+    if "divider" in topology:
+        return _place_voltage_divider(design)
     return _place_grid(design)
 
 
@@ -119,11 +121,13 @@ def _place_buck(design: DesignResult) -> tuple[dict[str, Position], float, float
 
     # Feedback resistors: below the tallest component in the row (IC or
     # inductor — whichever sticks further down) so resistor courtyards
-    # don't overlap the inductor's courtyard.
+    # don't overlap the inductor's courtyard. Spacing is set to
+    # body + ~3mm to keep reference silkscreen text ("R1"/"R2") from
+    # overlapping — silk labels extend ~1.5mm on each side of the body.
     res_size = _get_footprint_size(design, resistors[0] if resistors else None)
     row_half_height = max(ic_size[1], ind_size[1]) / 2
     fb_y = cy + row_half_height + res_size[1] / 2 + _MIN_CLEARANCE + 1.0
-    res_spacing = max(4.5, res_size[0] + 1.5)
+    res_spacing = max(6.0, res_size[0] + 3.0)
     for i, ref in enumerate(resistors):
         positions[ref] = Position(cx - 1 + i * res_spacing, fb_y)
 
@@ -375,6 +379,50 @@ def _place_mcu_breakout(
         positions["D1"] = Position(cx + 3, cy + 7)
     if "R2" in comp_map:
         positions["R2"] = Position(cx, cy + 7)
+
+    return _finalize(positions, design)
+
+
+def _place_voltage_divider(
+    design: DesignResult,
+) -> tuple[dict[str, Position], float, float]:
+    """Linear divider layout: J1 (3-pin) on left, R1/R2 chain, C1 bypass on VOUT.
+
+    J1 has 3 vertical pins (VIN top, GND middle, VOUT bottom). Placing
+    passives to the right of J1 at matching Y lets us run short,
+    straight traces: J1.VIN -> R1 -> VOUT -> R2 -> J1.GND.
+    """
+    positions: dict[str, Position] = {}
+    connectors = _find_all_by_category(design, ComponentCategory.CONNECTOR)
+    resistors = _find_all_by_category(design, ComponentCategory.RESISTOR)
+    caps = _find_all_by_category(design, ComponentCategory.CAPACITOR)
+
+    j1 = connectors[0] if connectors else None
+    r1 = resistors[0] if resistors else None
+    r2 = resistors[1] if len(resistors) > 1 else None
+    c1 = caps[0] if caps else None
+
+    # J1 pads are at y = 0, 2.54, 5.08 (pin 1 at origin). Center the pad
+    # cluster on cy by offsetting the placement anchor by -2.54mm (half
+    # the span between pin 1 and pin 3).
+    cx = _PAGE_X + 8
+    cy = _PAGE_Y + 8
+    j1_anchor_y = cy - 2.54
+
+    if j1:
+        positions[j1] = Position(cx, j1_anchor_y, 0)
+
+    # Resistors to the right, stacked vertically to trace the divider:
+    # R1 at VIN y-level, R2 at GND y-level.
+    r_x = cx + 6.0
+    if r1:
+        positions[r1] = Position(r_x, cy - 2.54, 0)  # align with VIN (pin 1)
+    if r2:
+        positions[r2] = Position(r_x, cy + 2.54, 0)  # align with GND (pin 3)
+
+    # Bypass cap to the right of the resistors, on the VOUT y-level (pin 2).
+    if c1:
+        positions[c1] = Position(r_x + 5.0, cy, 0)
 
     return _finalize(positions, design)
 

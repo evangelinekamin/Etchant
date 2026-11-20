@@ -129,5 +129,6 @@ class TestDRCCeilingsFile:
             "esp32c3_breakout",
             "led_5v_20ma",
             "opamp_buffer_5v",
+            "divider_5v_to_2v5",
         }
         assert set(data["topologies"].keys()) == expected

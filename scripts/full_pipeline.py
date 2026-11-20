@@ -205,6 +205,13 @@ dirs.append(run_design(
     5.0, 5.0, 0.022,
 ))
 
+from etchant.circuits.voltage_divider import VoltageDividerCircuit
+dirs.append(run_design(
+    "divider_5v_to_2v5",
+    VoltageDividerCircuit,
+    5.0, 2.5, 0.001,
+))
+
 # Zip everything
 zip_path = OUTPUT_BASE / "etchant_demo.zip"
 print(f"\n{'='*60}")

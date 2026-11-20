@@ -62,7 +62,7 @@ class ComponentPlacer:
         from etchant.kicad.power_placement import calculate_power_placement
 
         topology = design.spec.topology
-        known_topologies = {"buck", "ldo", "boost", "led"}
+        known_topologies = {"buck", "ldo", "boost", "led", "divider"}
         use_topology_specific = any(t in topology for t in known_topologies)
 
         if use_topology_specific:
