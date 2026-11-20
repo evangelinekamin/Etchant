@@ -156,6 +156,12 @@ def run_design(name, topology_cls, vin, vout, iout):
         except Exception as e:
             print(f"  {label} render skipped: {e}")
 
+    # Export Gerber + drill files bundled into a JLCPCB-ready zip.
+    from etchant.kicad.fab_export import export_fabrication_files
+    fab_zip = export_fabrication_files(pcb_path)
+    if fab_zip and fab_zip.exists():
+        print(f"  Fab zip: {fab_zip.name} ({fab_zip.stat().st_size} bytes)")
+
     # Design notes
     for note in design.design_notes:
         print(f"  Note: {note}")
